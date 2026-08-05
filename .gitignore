@@ -1,0 +1,7 @@
+*.png
+*.log
+node_modules/
+.DS_Store
+
+# Server- und Deployment-Notizen bleiben lokal
+SERVER.md

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layoutprobe</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* Für den Screenshot: sonst trifft er Frame 0 mit opacity:0. */
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+</style>
+</head>
+<body>
+<section id="screen-game" class="screen active">
+  <div id="game" class="game">
+    <header class="topbar">
+      <div class="tb-round"><span id="roundNo">7</span><small>/<span id="roundTotal">10</span></small></div>
+      <div id="combo" class="tb-combo show hot">
+        <span class="combo-x">&times;2.5</span><span class="combo-n">&#128293; 5er-Serie</span>
+      </div>
+      <button id="soundBtn" class="tb-sound">&#128266;</button>
+    </header>
+    <div id="timerbar" class="timerbar"><div id="timerFill" style="width:62%"></div></div>
+    <main id="stage" class="stage live">
+      <div id="stageContent" class="stage-content"></div>
+      <div id="feedback" class="feedback"></div>
+      <div id="overlay" class="overlay"></div>
+    </main>
+    <footer id="scorebar" class="scorebar">
+      <div class="chip me"><div class="chip-name">Mo<span class="chip-streak">&#128293;5</span></div><div class="chip-score">6.820</div></div>
+      <div class="chip"><div class="chip-name">Aylin</div><div class="chip-score">5.155</div></div>
+      <div class="chip"><div class="chip-name">Kevin</div><div class="chip-score">3.900</div></div>
+      <div class="chip gone"><div class="chip-name">Steffi</div><div class="chip-score">1.240</div></div>
+    </footer>
+  </div>
+</section>
+
+<script type="module">
+import { createRenderer } from "./render.js";
+const SAMPLES = {"compare": {"kind": "verdict", "bar": "round", "scale": 2800, "type": "compare", "prompt": "Passt die H\u00f6he?", "hint": "Dr\u00fccke, wenn die Aussage stimmt", "duration": 5200, "triggerAt": 0, "payload": {"left": "Aconcagua", "right": "Olymp", "op": ">", "legend": "ist h\u00f6her"}}, "symbol": {"type": "symbol", "kind": "watch", "bar": "step", "prompt": "Ist das Symbol zu sehen?", "hint": "Dr\u00fccke, sobald genau dieses Symbol erscheint", "duration": 3900, "stepInterval": 1300, "scale": 1300, "triggerAt": 2600, "payload": {"target": "\u2708", "steps": [{"t": 0, "s": "\u273f"}, {"t": 1300, "s": "\u2602"}, {"t": 2600, "s": "\u2708"}]}}, "emojihunt": {"type": "emojihunt", "kind": "watch", "bar": "step", "prompt": "Suche im Raster", "hint": "Dr\u00fccke, sobald \ud83c\udf4e auftaucht", "duration": 3600, "stepInterval": 1800, "scale": 1800, "triggerAt": 1800, "payload": {"target": "\ud83c\udf4e", "cols": 5, "frames": [{"t": 0, "cells": ["\ud83c\udf81", "\ud83c\udf4d", "\u2b50", "\u26a1", "\ud83c\udf49", "\ud83d\udd14", "\u2b50", "\ud83c\udf49", "\ud83d\udd14", "\ud83c\udf49", "\ud83c\udf4b", "\ud83c\udf4d", "\ud83c\udf47", "\u26a1", "\ud83c\udf47", "\ud83c\udf49", "\ud83c\udf4b", "\ud83c\udf4d", "\u2b50", "\ud83c\udf81"]}, {"t": 1800, "cells": ["\ud83d\udc8e", "\ud83c\udf4e", "\u2b50", "\u2b50", "\ud83d\udd14", "\ud83c\udf49", "\ud83c\udf49", "\ud83d\udc51", "\ud83d\udc51", "\u26a1", "\ud83c\udf47", "\ud83d\udc8e", "\ud83d\udd14", "\ud83c\udf49", "\ud83d\udd14", "\ud83c\udf4b", "\ud83c\udf81", "\u26a1", "\ud83c\udf47", "\ud83c\udf49"]}]}}, "category": {"type": "category", "kind": "watch", "bar": "step", "prompt": "Kategorie: OBST", "hint": "Dr\u00fccke, sobald ein Wort aus der Kategorie OBST erscheint", "duration": 3400, "stepInterval": 1700, "scale": 1700, "triggerAt": 1700, "payload": {"label": "OBST", "steps": [{"t": 0, "w": "Beige"}, {"t": 1700, "w": "Mango"}]}}, "numbers": {"type": "numbers", "kind": "watch", "bar": "step", "prompt": "Zahl durch 5 teilbar?", "hint": "Dr\u00fccke, sobald eine Zahl durch 5 teilbar erscheint", "duration": 2800, "stepInterval": 1400, "scale": 1400, "triggerAt": 1400, "payload": {"ruleText": "durch 5 teilbar", "steps": [{"t": 0, "n": 74}, {"t": 1400, "n": 60}]}}, "redtriangle": {"kind": "watch", "bar": "none", "scale": 1200, "type": "redtriangle", "prompt": "Finde das rote Dreieck", "hint": "Dr\u00fccke, sobald es hinter den Kl\u00f6tzen hervorkommt", "duration": 5200, "triggerAt": 1580, "payload": {"tri": {"size": 17, "x": 52.65300902050107, "y": 52.56295968374821}, "cover": {"w": 34.94083672055092, "h": 33.79613604744829, "x": 48.18045902472856, "y": 48.30566815651925, "vx": -9.591311166063205, "vy": -7.9496943591847185, "c": "#2b3350"}, "decoys": [{"w": 19.47031348092759, "h": 25.35208919946324, "x": 20.714743122238755, "y": 67.75239620953056, "vx": -18.473694466186835, "vy": 20.83217669225305, "c": "#3a2f6b", "shape": "tri"}, {"w": 14.234524244012448, "h": 14.007587907480616, "x": 15.075745987123184, "y": 42.6094149661124, "vx": -18.80406579497106, "vy": -17.55029815632541, "c": "#1f4d5c", "shape": "tri"}, {"w": 15.254197005195966, "h": 20.18206855095222, "x": 10.193867034155247, "y": 35.7971902564366, "vx": 21.280525351223176, "vy": -7.865821152509945, "c": "#4a2b46", "shape": "tri"}, {"w": 22.25277326508252, "h": 21.47027501969145, "x": 33.467370672477145, "y": 1.0808300814253435, "vx": -18.76496717508939, "vy": 6.063957543035046, "c": "#2f4a2b", "shape": "tri"}, {"w": 22.791680502751284, "h": 19.515104475546273, "x": 27.676231895338926, "y": 51.3059593809182, "vx": -10.70695305271674, "vy": -16.616252565763148, "c": "#5c4423", "shape": "circle"}]}}, "smileys": {"kind": "watch", "bar": "none", "scale": 1200, "type": "smileys", "prompt": "Ist ein trauriger Smiley zu sehen?", "hint": "Dr\u00fccke, sobald einer traurig guckt", "duration": 6500, "triggerAt": 2863, "payload": {"cols": 5, "faces": ["\ud83d\ude42", "\ud83d\ude0a", "\ud83d\ude0a", "\ud83d\ude00", "\ud83d\ude0a", "\ud83d\ude04", "\ud83d\ude42", "\ud83d\ude0a", "\ud83d\ude00", "\ud83d\ude0a", "\ud83d\ude00", "\ud83d\ude00", "\ud83d\ude42", "\ud83d\ude00", "\ud83d\ude00", "\ud83d\ude04", "\ud83d\ude00", "\ud83d\ude00", "\ud83d\ude42", "\ud83d\ude42"], "flips": [{"t": 240, "i": 8, "f": "\ud83d\ude0a"}, {"t": 469, "i": 17, "f": "\ud83d\ude04"}, {"t": 729, "i": 9, "f": "\ud83d\ude42"}, {"t": 967, "i": 10, "f": "\ud83d\ude00"}, {"t": 1257, "i": 2, "f": "\ud83d\ude00"}, {"t": 1475, "i": 18, "f": "\ud83d\ude04"}, {"t": 1719, "i": 8, "f": "\ud83d\ude42"}, {"t": 1958, "i": 6, "f": "\ud83d\ude04"}, {"t": 2238, "i": 7, "f": "\ud83d\ude0a"}, {"t": 2478, "i": 1, "f": "\ud83d\ude0a"}, {"t": 2685, "i": 1, "f": "\ud83d\ude00"}, {"t": 2978, "i": 8, "f": "\ud83d\ude00"}, {"t": 3261, "i": 1, "f": "\ud83d\ude0a"}, {"t": 3486, "i": 2, "f": "\ud83d\ude04"}, {"t": 3758, "i": 8, "f": "\ud83d\ude42"}, {"t": 4271, "i": 18, "f": "\ud83d\ude0a"}, {"t": 4566, "i": 2, "f": "\ud83d\ude42"}, {"t": 4821, "i": 12, "f": "\ud83d\ude04"}, {"t": 5040, "i": 9, "f": "\ud83d\ude04"}, {"t": 5495, "i": 12, "f": "\ud83d\ude42"}, {"t": 5729, "i": 8, "f": "\ud83d\ude04"}, {"t": 6008, "i": 12, "f": "\ud83d\ude00"}, {"t": 6242, "i": 19, "f": "\ud83d\ude42"}], "sadIndex": 10, "sad": "\ud83d\ude2d", "sadAt": 2863}}, "same": {"kind": "verdict", "bar": "round", "scale": 2800, "type": "same", "prompt": "Beide Muster gleich?", "hint": "Dr\u00fccke, wenn sie identisch sind", "duration": 5800, "triggerAt": 0, "payload": {"a": ["\u2618", "\u273f", "\u2602", "\u2602", "\u2618", "\u2618", "\u263e", "\u2618", "\u2618"], "b": ["\u2618", "\u273f", "\u2602", "\u2602", "\u2618", "\u2618", "\u263e", "\u2618", "\u2618"], "cols": 3}}, "traffic": {"kind": "watch", "bar": "none", "scale": 1200, "type": "traffic", "prompt": "Dr\u00fccke bei GR\u00dcN", "hint": "Gelb ist eine Falle \u2013 nur Gr\u00fcn z\u00e4hlt", "duration": 6000, "triggerAt": 1700, "payload": {"steps": [{"t": 0, "s": "red"}, {"t": 1700, "s": "green"}]}}, "timing": {"type": "timing", "kind": "precision", "bar": "none", "prompt": "Genau auf die Linie", "hint": "Dr\u00fccke exakt, wenn der Balken die Markierung erreicht", "duration": 4200, "scale": 450, "tolerance": 450, "triggerAt": 3023, "payload": {"markPct": 0.7198365365131214}}, "stroop": {"kind": "verdict", "bar": "round", "scale": 1600, "type": "stroop", "prompt": "Wort und Farbe gleich?", "hint": "Dr\u00fccke nur, wenn das Wort in seiner eigenen Farbe steht", "duration": 4200, "triggerAt": 0, "payload": {"word": "GR\u00dcN", "hex": "#25d366"}}};
+const view = (location.hash || "#compare").slice(1);
+const $ = (id) => document.getElementById(id);
+
+const LOBBY = `
+<section class="screen active"><div class="lobby">
+  <div class="codebox"><span class="codebox-label">Raumcode</span><strong>7QK4</strong>
+    <span class="codebox-vis">&Ouml;ffentlich &ndash; steht in der Liste</span>
+    <button class="btn ghost small">Link kopieren</button></div>
+  <div class="lobby-head"><h2>Spieler <span>3/4</span></h2></div>
+  <div class="playerlist">
+    <div class="pcard"><div class="pcard-name">Mo &#128081;</div><div class="pcard-state">Host</div></div>
+    <div class="pcard ready"><div class="pcard-name">Aylin</div><div class="pcard-state">bereit</div></div>
+    <div class="pcard"><div class="pcard-name">Kevin</div><div class="pcard-state">wartet</div></div>
+    <div class="pcard empty"><div class="pcard-name">frei</div></div>
+  </div>
+  <div>
+    <div class="setting"><span class="setting-label">Runden</span>
+      <div class="segmented"><button class="seg">6</button><button class="seg sel">10</button>
+      <button class="seg">14</button><button class="seg">20</button></div></div>
+    <div class="setting"><span class="setting-label">Sichtbar</span>
+      <div class="segmented"><button class="seg sel">&Ouml;ffentlich</button><button class="seg">Privat</button></div></div>
+    <button class="btn big">Spiel starten</button>
+    <p class="hintline">Warten auf die anderen &hellip;</p>
+  </div>
+  <button class="btn ghost small">Raum verlassen</button>
+</div></section>`;
+
+const FINAL = `
+<section class="screen active"><div class="final">
+  <h2 class="final-title">Endstand</h2>
+  <ol class="podium">
+    <li class="pod pod-0 me"><span class="pod-medal">&#129351;</span><span class="pod-name">Mo</span>
+      <span class="pod-meta">6 Runden gewonnen &middot; 5er-Serie &middot; schnellste 214 ms</span><span class="pod-score">12.480</span></li>
+    <li class="pod pod-1"><span class="pod-medal">&#129352;</span><span class="pod-name">Aylin</span>
+      <span class="pod-meta">3 Runden gewonnen &middot; 3er-Serie &middot; schnellste 268 ms</span><span class="pod-score">9.130</span></li>
+    <li class="pod pod-2"><span class="pod-medal">&#129353;</span><span class="pod-name">Kevin</span>
+      <span class="pod-meta">1 Runde gewonnen &middot; schnellste 331 ms</span><span class="pod-score">4.005</span></li>
+    <li class="pod pod-3"><span class="pod-medal">4&#65039;&#8419;</span><span class="pod-name">Steffi</span>
+      <span class="pod-meta">0 Runden gewonnen &middot; schnellste 402 ms</span><span class="pod-score">1.250</span></li>
+  </ol>
+  <button class="btn big">Nochmal!</button>
+</div></section>`;
+
+const HOME = `
+<section class="screen active"><div class="home">
+  <h1 class="logo"><span>REFLEX</span><em>ROYALE</em></h1>
+  <p class="tagline">Schnell dr&uuml;cken. Aber nur, wenn es stimmt.</p>
+  <label class="field-label">Dein Name</label>
+  <input value="Mo">
+  <div class="setting"><span class="setting-label">Sichtbar</span>
+    <div class="segmented"><button class="seg sel">&Ouml;ffentlich</button><button class="seg">Privat</button></div></div>
+  <button class="btn big">Raum er&ouml;ffnen</button>
+  <div class="or"><span>oder beitreten</span></div>
+  <div class="rooms-head">Offene R&auml;ume <span>(3)</span></div>
+  <div class="roomlist">
+    <button class="roomrow"><span class="roomrow-host">Aylin</span><span class="roomrow-meta">10 Runden</span><span class="roomrow-count">3/4</span></button>
+    <button class="roomrow"><span class="roomrow-host">Kevin</span><span class="roomrow-meta">20 Runden</span><span class="roomrow-count">2/4</span></button>
+    <button class="roomrow"><span class="roomrow-host">Steffi</span><span class="roomrow-meta">6 Runden</span><span class="roomrow-count">1/4</span></button>
+  </div>
+  <div class="joinrow"><input placeholder="CODE"><button class="btn">Mit Code</button></div>
+  <button class="btn ghost small">Wie geht das?</button>
+</div></section>`;
+
+if (view === "home") { document.body.innerHTML = HOME; } else
+if (view === "lobby") { document.body.innerHTML = LOBBY; }
+else if (view === "final") { document.body.innerHTML = FINAL; }
+else if (view === "flash") {
+  const ov = $("overlay");
+  ov.className = "overlay show flash";
+  ov.innerHTML = `
+    <div class="fl-delta plus">+1.375</div>
+    <div class="fl-badges"><span class="fl-badge">BLITZ</span><span class="fl-badge mult">Serie &times;2.5</span></div>
+    <div class="fl-win mine">RUNDE GEWONNEN</div>
+    <div class="fl-truth">Ab dem Moment war Dr&uuml;cken richtig</div>`;
+} else if (view === "prelude") {
+  const ov = $("overlay");
+  ov.className = "overlay show prelude";
+  ov.innerHTML = `
+    <div class="prompt">Drücke, sobald &#127826; auftaucht</div>
+    <div class="hint">Suche im Raster</div>
+    <div class="countdown">2</div>`;
+} else if (view === "feedback") {
+  const r = SAMPLES.symbol;
+  createRenderer(r, $("stageContent")).frame(r.triggerAt + 200);
+  const fb = $("feedback");
+  fb.className = "feedback show fb-hit";
+  fb.innerHTML = "TREFFER<small>241 ms</small>";
+  $("stage").classList.add("pressed");
+} else {
+  const r = SAMPLES[view];
+  const inst = createRenderer(r, $("stageContent"));
+  const t = r.triggerAt !== null ? r.triggerAt + 250 : r.duration * 0.6;
+  inst.frame(t);
+  // Balken so setzen, wie ihn die App an dieser Stelle zeigen würde.
+  $("timerbar").classList.toggle("off", r.bar === "none");
+  let left = 1;
+  if (r.bar === "step" && r.stepInterval) left = 1 - (t % r.stepInterval) / r.stepInterval;
+  else if (r.bar === "round") left = Math.max(0, 1 - t / r.duration);
+  $("timerFill").style.width = (left * 100) + "%";
+}
+</script>
+</body>
+</html>

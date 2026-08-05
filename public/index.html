@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0a0713">
+<title>Reflex Royale</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⚡</text></svg>">
+</head>
+<body>
+
+<div id="status"></div>
+<div id="toast"></div>
+
+<!-- ------------------------------------------------------------------ -->
+<section id="screen-home" class="screen active">
+  <div class="home">
+    <h1 class="logo"><span>REFLEX</span><em>ROYALE</em></h1>
+    <p class="tagline">Schnell drücken. Aber nur, wenn es stimmt.</p>
+
+    <label class="field-label" for="name">Dein Name</label>
+    <input id="name" maxlength="12" placeholder="z.&nbsp;B. Mo" autocomplete="nickname">
+
+    <div class="setting">
+      <span class="setting-label">Sichtbar</span>
+      <div class="segmented">
+        <button class="seg sel" data-vis="public">Öffentlich</button>
+        <button class="seg" data-vis="private">Privat</button>
+      </div>
+    </div>
+    <button id="createBtn" class="btn big">Raum eröffnen</button>
+
+    <div class="or"><span>oder beitreten</span></div>
+
+    <div class="rooms-head">Offene Räume <span id="roomsCount"></span></div>
+    <div id="roomList" class="roomlist"></div>
+
+    <div class="joinrow">
+      <input id="codeInput" maxlength="5" placeholder="CODE" autocapitalize="characters"
+             autocomplete="off" spellcheck="false">
+      <button id="joinBtn" class="btn">Mit Code</button>
+    </div>
+
+    <button id="helpBtn" class="btn ghost small">Wie geht das?</button>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<section id="screen-lobby" class="screen">
+  <div class="lobby">
+    <div class="codebox">
+      <span class="codebox-label">Raumcode</span>
+      <strong id="roomCode">····</strong>
+      <span id="roomVis" class="codebox-vis"></span>
+      <button id="copyBtn" class="btn ghost small">Link kopieren</button>
+    </div>
+
+    <div class="lobby-head">
+      <h2>Spieler <span id="lobbyCount">1/4</span></h2>
+    </div>
+    <div id="playerList" class="playerlist"></div>
+
+    <div id="hostControls" hidden>
+      <div class="setting">
+        <span class="setting-label">Runden</span>
+        <div class="segmented">
+          <button class="seg" data-rounds="6">6</button>
+          <button class="seg" data-rounds="10">10</button>
+          <button class="seg" data-rounds="14">14</button>
+          <button class="seg" data-rounds="20">20</button>
+        </div>
+      </div>
+      <div class="setting">
+        <span class="setting-label">Sichtbar</span>
+        <div class="segmented">
+          <button class="seg" data-lobbyvis="public">Öffentlich</button>
+          <button class="seg" data-lobbyvis="private">Privat</button>
+        </div>
+      </div>
+      <button id="startBtn" class="btn big">Spiel starten</button>
+      <p id="startHint" class="hintline"></p>
+    </div>
+
+    <div id="guestControls" hidden>
+      <button id="readyBtn" class="btn big">Bereit!</button>
+      <p class="hintline">Der Host startet, sobald alle bereit sind.</p>
+    </div>
+
+    <button id="leaveBtn" class="btn ghost small">Raum verlassen</button>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<section id="screen-game" class="screen">
+  <div id="game" class="game">
+    <header class="topbar">
+      <div class="tb-round"><span id="roundNo">1</span><small>/<span id="roundTotal">10</span></small></div>
+      <div id="combo" class="tb-combo"></div>
+      <button id="soundBtn" class="tb-sound">🔊</button>
+    </header>
+
+    <div id="timerbar" class="timerbar"><div id="timerFill"></div></div>
+
+    <main id="stage" class="stage">
+      <div id="stageContent" class="stage-content"></div>
+      <div id="feedback" class="feedback"></div>
+      <div id="overlay" class="overlay"></div>
+    </main>
+
+    <footer id="scorebar" class="scorebar"></footer>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<section id="screen-final" class="screen">
+  <div class="final">
+    <h2 class="final-title">Endstand</h2>
+    <ol id="podium" class="podium"></ol>
+    <button id="againBtn" class="btn big">Nochmal!</button>
+    <p id="againHint" class="hintline">Der Host kann eine neue Runde starten.</p>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<div id="help" hidden>
+  <div class="help-inner">
+    <h2>So läuft das</h2>
+    <p><strong>Drücken heißt:</strong> irgendwo auf die Spielfläche tippen – am
+       Rechner Leertaste.</p>
+    <ul>
+      <li><b>Wissensrunden</b> zeigen eine Aussage. Stimmt sie, drücken. Stimmt
+          sie nicht, Finger stillhalten. Der Balken oben ist die Frist.</li>
+      <li><b>Schrittrunden</b> zeigen ein Element nach dem anderen. Der Balken
+          gehört immer dem, was gerade zu sehen ist.</li>
+      <li><b>Warterunden</b> laufen durch, bis etwas passiert – da gibt es
+          keinen Balken, nur Augen auf.</li>
+      <li><b>Fallen:</b> Manchmal passiert gar nichts. Wer dann nicht drückt,
+          gewinnt die Runde.</li>
+      <li><b>Es gewinnt immer jemand.</b> Ein Fehler kostet die Runde und die
+          Serie, aber nie Punkte. Wer daneben greift, verliert gegen die
+          anderen – das reicht.</li>
+      <li><b>Serie:</b> Jede richtige Runde steigert den Multiplikator bis ×3.
+          Ein Fehler setzt ihn auf null.</li>
+      <li><b>Blitz:</b> Unter 250 Millisekunden gibt es Extrapunkte.</li>
+    </ul>
+    <button id="helpClose" class="btn">Alles klar</button>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
