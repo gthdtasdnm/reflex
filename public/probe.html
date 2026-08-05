@@ -120,6 +120,16 @@ else if (view === "flash") {
     <div class="prompt">Drücke, sobald &#127826; auftaucht</div>
     <div class="hint">Suche im Raster</div>
     <div class="countdown">2</div>`;
+} else if (view === "locked") {
+  const r = SAMPLES.category;
+  const hit = r.items.find((i) => i.hit) || r.items[0];
+  createRenderer(r, $("stageContent")).frame(hit.t + 300);
+  const fb = $("feedback");
+  fb.className = "feedback show fb-locked";
+  fb.innerHTML = "Aylin war schneller<small>284 ms</small>";
+  $("stage").classList.add("spent");
+  $("pressTag").className = "press-tag show bad";
+  $("pressTag").textContent = "zu spät";
 } else if (view === "feedback") {
   const r = SAMPLES.symbol;
   const hit = r.items.find((i) => i.hit) || r.items[0];

@@ -332,11 +332,12 @@ function scoreRound(room) {
     const press = cur.presses.get(p.id);
 
     if (!press) {
-      // Nicht gedrückt. Bei einer Warterunde ohne Auslöser war genau das
-      // richtig; sonst hat man die Gelegenheit verpasst.
+      // Nicht gedrückt. Drei Gründe: die Falle richtig erkannt, von jemand
+      // anderem überholt worden, oder schlicht verpasst.
       const held = round.kind === "watch" && round.triggerAt === null;
+      const locked = !!cur.decided && cur.decided.id !== p.id;
       raws.set(p.id, {
-        outcome: held ? "held" : "miss",
+        outcome: held ? "held" : locked ? "locked" : "miss",
         reaction: null,
         base: held ? P_HELD : 0,
         nearness: -Infinity,
@@ -356,25 +357,21 @@ function scoreRound(room) {
     raws.set(p.id, { ...ev, base, at: press.elapsed });
   }
 
-  // Schritt 2: die Runde hat immer einen Sieger. Gibt es Richtige, gewinnt
-  // wer zuerst richtig gedrückt hat (bei einer erkannten Falle alle
-  // gemeinsam, dort gibt es keine Zeit zu vergleichen). Lag niemand richtig,
-  // gewinnt der knappste Fehlversuch – sonst könnten alle zugleich verlieren.
+  // Schritt 2: die Runde hat immer einen Sieger – und genau einen, sobald
+  // jemand richtig gedrückt hat. Nur wenn niemand gedrückt hat, kann es
+  // mehrere geben: bei einer erkannten Falle gibt es keine Zeit zu
+  // vergleichen. Lag niemand richtig, gewinnt der knappste Fehlversuch –
+  // sonst könnten alle zugleich verlieren.
   const goodOnes = players.filter((p) => isGood(raws.get(p.id).outcome));
   let winners = [];
   let winBonus = 0;
 
-  if (goodOnes.length) {
+  if (cur.decided) {
     winBonus = P_WIN;
-    const timed = goodOnes.filter((p) => raws.get(p.id).at !== Infinity);
-    if (timed.length) {
-      // Absolute Zeit, nicht Reaktionszeit: wer eine Aufgabe früher erkennt,
-      // war besser als jemand, der bei der nächsten schneller zuckt.
-      const best = Math.min(...timed.map((p) => raws.get(p.id).at));
-      winners = timed.filter((p) => raws.get(p.id).at === best);
-    } else {
-      winners = goodOnes; // alle haben die Falle erkannt
-    }
+    winners = players.filter((p) => p.id === cur.decided.id);
+  } else if (goodOnes.length) {
+    winBonus = P_WIN;
+    winners = goodOnes; // alle haben die Falle erkannt
   } else if (players.length) {
     winBonus = P_CLOSEST;
     const best = Math.max(...players.map((p) => raws.get(p.id).nearness));
@@ -630,17 +627,27 @@ function handle(ws, msg) {
       // Zu spät eingetrudelt zählt nicht mehr.
       if (elapsed > cur.round.duration + 250) break;
       if (Date.now() > cur.startAt + cur.round.duration + GRACE_MS) break;
+      // Ist die Runde schon entschieden, zählt kein Druck mehr. Der Client
+      // sperrt zwar selbst, aber ein Druck kann unterwegs gewesen sein.
+      if (cur.decided) break;
+
       cur.presses.set(player.id, { elapsed });
       broadcast(room, { t: "pressed", id: player.id });
 
-      // Sobald jemand richtig gedrückt hat, ist die Runde entschieden. Vorher
-      // läuft sie weiter – bei einer Serie kommt die nächste Gelegenheit,
-      // wenn alle die letzte haben durchgehen lassen.
-      if (!cur.closing && isGood(evaluate(cur.round, elapsed).outcome)) {
-        cur.closing = true;
-        // Kurzer Nachlauf, damit ein fast gleichzeitiger Druck des anderen
-        // noch ankommt und mitgewertet wird.
-        later(room, 400, () => scoreRound(room));
+      // Sobald jemand richtig gedrückt hat, ist die Runde entschieden: es
+      // gibt genau einen Gewinner, alle anderen sind ab hier gesperrt.
+      // Vorher läuft sie weiter – bei einer Serie kommt die nächste
+      // Gelegenheit, wenn alle die letzte haben durchgehen lassen.
+      const ev = evaluate(cur.round, elapsed);
+      if (isGood(ev.outcome)) {
+        cur.decided = { id: player.id, elapsed, reaction: ev.reaction };
+        broadcast(room, {
+          t: "lock",
+          by: player.id,
+          name: player.name,
+          reaction: ev.reaction,
+        });
+        later(room, 800, () => scoreRound(room));
         break;
       }
       maybeEndEarly(room);

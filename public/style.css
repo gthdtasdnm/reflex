@@ -460,6 +460,18 @@ input:focus { border-color: var(--cyan); }
 .feedback small { font-size: 5cqmin; opacity: .8; font-weight: 700; }
 .fb-hit, .fb-perfect { color: var(--good); }
 .fb-early, .fb-wrong, .fb-off { color: var(--bad); }
+/* „X war schneller" ist länger als die anderen Meldungen und lag quer über
+   dem Rundeninhalt. Eigener Hintergrund – die Runde ist für einen selbst
+   ohnehin vorbei, es gibt darunter nichts mehr zu sehen. */
+.feedback.fb-locked {
+  color: #ff9d3b;
+  font-size: 7.5cqmin;
+  line-height: 1.15;
+  padding: 0 6cqmin;
+  background: #0a0713d9;
+  backdrop-filter: blur(3px);
+}
+.feedback.fb-locked small { color: var(--dim); margin-top: 1cqmin; }
 
 @keyframes fbPop {
   from { transform: scale(.6); opacity: 0; }

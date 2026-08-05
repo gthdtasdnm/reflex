@@ -42,6 +42,9 @@ Zwei Regeln machen das Ganze aus:
   passt, ist raus. Weil die meisten Aufgaben nicht passen, bestraft sich
   blindes Drauflosdrücken von selbst – eine eigene Fallenmechanik braucht es
   hier nicht.
+- **Nur einer gewinnt.** Der erste richtige Druck beendet die Runde und sperrt
+  die Eingabe bei allen anderen. Wer zu spät kommt, sieht, wer schneller war
+  und mit welcher Zeit.
 
 Der Zeitbalken oben gehört immer der Aufgabe, die gerade zu sehen ist: Aufgabe
 erscheint, Balken läuft ab, nächste Aufgabe, Balken wieder voll. Ein Balken,
@@ -97,10 +100,14 @@ niemand die Runde gewonnen hatte.
 
 - Treffer: 150–1000, je schneller desto mehr.
 - Falle erkannt und stillgehalten: 550.
-- **Rundensieg: +300.** Den gibt es in *jeder* Runde. Waren mehrere gleich
-  schnell oder haben mehrere die Falle erkannt, teilen sie ihn sich. Lag
-  ausnahmsweise niemand richtig, bekommt ihn abgeschwächt (+150), wer am
-  nächsten dran war. Es gewinnt also immer jemand.
+- **Rundensieg: +300.** Den gibt es in *jeder* Runde, und in aller Regel
+  genau einmal: der erste richtige Druck entscheidet, danach ist die Eingabe
+  bei allen anderen gesperrt. Sie sehen sofort, wer schneller war und mit
+  welcher Zeit. Geteilt wird der Sieg nur, wenn niemand gedrückt hat und
+  mehrere gemeinsam eine Falle erkannt haben – da gibt es keine Zeiten zu
+  vergleichen. Lag ausnahmsweise niemand richtig, bekommt den Sieg
+  abgeschwächt (+150), wer am nächsten dran war. Es gewinnt also immer
+  jemand.
 - **Blitz: +250** für eine Reaktion unter 250 Millisekunden.
 - **Perfekt: +250** für ein Timing auf den Punkt.
 - **Serie:** Jede richtige Runde steigert den Multiplikator – ×1,25, ×1,5, ×2,
@@ -183,7 +190,8 @@ firefox --headless --window-size=360,660 --screenshot "$PWD/out.png" \
   "http://127.0.0.1:8000/probe.html#emojihunt"
 ```
 
-Ansichten: `home`, `lobby`, `final`, `prelude`, `flash`, `feedback` sowie die
+Ansichten: `home`, `lobby`, `final`, `prelude`, `flash`, `feedback`, `locked`
+sowie die
 Rundentypen `compare`, `same`, `stroop`, `symbol`, `category`, `numbers`,
 `emojihunt`, `redtriangle`, `smileys`, `traffic`, `timing`.
 

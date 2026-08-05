@@ -163,6 +163,10 @@ function onMessage(msg) {
       markPressed(msg.id);
       break;
 
+    case "lock":
+      onLock(msg);
+      break;
+
     case "result":
       showResult(msg);
       break;
@@ -428,6 +432,7 @@ function press() {
   unlock();
   const cur = state.cur;
   if (!cur || cur.pressed) return;
+  if (cur.locked) return; // jemand war schneller, die Runde ist durch
 
   // Im Vorlauf und während der Rückmeldung passiert nichts. Früher galt ein
   // Druck im Vorlauf als Fehlstart – wer nach der letzten Runde noch einmal
@@ -527,12 +532,36 @@ function showFeedback(kind, elapsed) {
   }, 850);
 }
 
+// Jemand hat die Runde geholt. Ab hier nimmt der Client keinen Druck mehr an
+// und zeigt, wer schneller war.
+function onLock(msg) {
+  const cur = state.cur;
+  if (!cur) return;
+  cur.locked = true;
+  if (msg.by === state.you) return; // der Gewinner sieht seine eigene Meldung
+
+  clearTimeout(showFeedback.id);
+  const node = $("feedback");
+  node.className = "feedback show fb-locked";
+  const ms = msg.reaction === null || msg.reaction === undefined
+    ? ""
+    : `<small>${Math.max(0, Math.round(msg.reaction))} ms</small>`;
+  node.innerHTML = `${escapeHtml(msg.name)} war schneller${ms}`;
+  $("stage").classList.remove("pressed");
+  $("stage").classList.add("spent");
+  const tag = $("pressTag");
+  tag.textContent = "zu spät";
+  tag.className = "press-tag show bad";
+  sfx.miss();
+}
+
 function clearPressState() {
   clearTimeout(showFeedback.id);
   $("stage").classList.remove("pressed", "spent");
   $("feedback").className = "feedback";
   $("feedback").textContent = "";
   $("pressTag").className = "press-tag";
+  $("pressTag").textContent = "";
 }
 
 // ---------------------------------------------------------------------------
@@ -565,11 +594,19 @@ function showResult(msg) {
   const iWon = winners.some((w) => w.id === state.you);
   const others = winners.filter((w) => w.id !== state.you);
 
+  const zeit = (r) =>
+    r.reaction === null || r.reaction === undefined
+      ? ""
+      : ` · ${Math.max(0, Math.round(r.reaction))} ms`;
+
   let winLine = "";
-  if (iWon && winners.length === 1) winLine = "RUNDE GEWONNEN";
-  else if (iWon) winLine = "Runde geteilt";
-  else if (others.length) {
-    winLine = `Runde an ${others.map((w) => escapeHtml(w.name)).join(" & ")}`;
+  if (iWon && winners.length === 1) {
+    winLine = `RUNDE GEWONNEN${zeit(me)}`;
+  } else if (iWon) {
+    winLine = "Runde geteilt";
+  } else if (others.length) {
+    winLine = `Runde an ${others.map((w) => escapeHtml(w.name)).join(" & ")}` +
+      (others.length === 1 ? zeit(others[0]) : "");
   }
 
   const badges = (me?.notes ?? [])
