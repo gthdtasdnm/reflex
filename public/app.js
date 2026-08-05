@@ -5,6 +5,12 @@ import { isEnabled, setEnabled, sfx, unlock } from "./audio.js";
 
 const $ = (id) => document.getElementById(id);
 
+// Sitzplatz-Tierchen. Gleiche Liste und gleiche Ableitung in allen vier
+// Spielen, damit dieselbe Person überall dasselbe Zeichen bekommt.
+const AVATARS = ["🦊", "🐙", "🦅", "🐺", "🦁", "🐉"];
+const avatarFor = (id) =>
+  AVATARS[[...String(id)].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATARS.length];
+
 const state = {
   you: null,
   code: null,
@@ -196,7 +202,7 @@ function renderRooms(list) {
   }
   box.innerHTML = list.map((r) => `
     <button class="roomrow" data-code="${escapeHtml(r.code)}">
-      <span class="roomrow-host">${escapeHtml(r.host)}</span>
+      <span class="roomrow-name">${escapeHtml(r.host)}</span>
       <span class="roomrow-meta">${r.rounds} Runden</span>
       <span class="roomrow-count">${r.count}/${r.max}</span>
     </button>`).join("");
@@ -237,15 +243,19 @@ function renderRoom() {
     for (let i = 0; i < 4; i++) {
       const p = r.players[i];
       const card = document.createElement("div");
-      card.className = "pcard" + (p ? "" : " empty") + (p?.ready ? " ready" : "");
+      card.className = "seat" + (p ? "" : " empty") +
+        (p?.ready ? " ready" : "") + (p && !p.connected ? " off" : "");
       if (!p) {
-        card.innerHTML = `<div class="pcard-name">frei</div>`;
+        card.innerHTML =
+          `<div class="av">🪑</div><div class="nm">frei</div><div class="st">wartet</div>`;
       } else {
         card.innerHTML = `
-          <div class="pcard-name">${escapeHtml(p.name)}${p.host ? " 👑" : ""}</div>
-          <div class="pcard-state">${
-          p.host ? "Host" : p.ready ? "bereit" : "wartet"
-        }</div>`;
+          <div class="av">${avatarFor(p.id)}</div>
+          <div class="nm">${escapeHtml(p.name)}${p.id === state.you ? " (du)" : ""}</div>
+          <div class="st">${
+          !p.connected ? "weg" : p.host ? "startet" : p.ready ? "✓ bereit" : "wartet"
+        }</div>
+          ${p.host ? '<div class="host">HOST</div>' : ""}`;
       }
       list.append(card);
     }

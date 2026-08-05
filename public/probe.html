@@ -48,19 +48,19 @@ const LOBBY = `
     <span class="codebox-vis">&Ouml;ffentlich &ndash; steht in der Liste</span>
     <button class="btn ghost small">Link kopieren</button></div>
   <div class="lobby-head"><h2>Spieler <span>3/4</span></h2></div>
-  <div class="playerlist">
-    <div class="pcard"><div class="pcard-name">Mo &#128081;</div><div class="pcard-state">Host</div></div>
-    <div class="pcard ready"><div class="pcard-name">Aylin</div><div class="pcard-state">bereit</div></div>
-    <div class="pcard"><div class="pcard-name">Kevin</div><div class="pcard-state">wartet</div></div>
-    <div class="pcard empty"><div class="pcard-name">frei</div></div>
+  <div class="seats">
+    <div class="seat"><div class="av">&#129418;</div><div class="nm">Mo (du)</div><div class="st">startet</div><div class="host">HOST</div></div>
+    <div class="seat ready"><div class="av">&#128025;</div><div class="nm">Aylin</div><div class="st">&#10003; bereit</div></div>
+    <div class="seat"><div class="av">&#129413;</div><div class="nm">Kevin</div><div class="st">wartet</div></div>
+    <div class="seat empty"><div class="av">&#129686;</div><div class="nm">frei</div><div class="st">wartet</div></div>
   </div>
-  <div>
+  <div id="hostControls">
     <div class="setting"><span class="setting-label">Runden</span>
       <div class="segmented"><button class="seg">6</button><button class="seg sel">10</button>
       <button class="seg">14</button><button class="seg">20</button></div></div>
     <div class="setting"><span class="setting-label">Sichtbar</span>
       <div class="segmented"><button class="seg sel">&Ouml;ffentlich</button><button class="seg">Privat</button></div></div>
-    <button class="btn big">Spiel starten</button>
+    <button class="btn primary big">Spiel starten</button>
     <p class="hintline">Warten auf die anderen &hellip;</p>
   </div>
   <button class="btn ghost small">Raum verlassen</button>

@@ -16,8 +16,8 @@
 <!-- ------------------------------------------------------------------ -->
 <section id="screen-home" class="screen active">
   <div class="home">
-    <h1 class="logo"><span>REFLEX</span><em>ROYALE</em></h1>
-    <p class="tagline">Schnell drücken. Aber nur, wenn es stimmt.</p>
+    <h1 class="logo">REFLEX<span>ROYALE</span></h1>
+    <p class="tag">Schnell drücken. Aber nur, wenn es stimmt.</p>
 
     <label class="field-label" for="name">Dein Name</label>
     <input id="name" maxlength="12" placeholder="z.&nbsp;B. Mo" autocomplete="nickname">
@@ -29,7 +29,7 @@
         <button class="seg" data-vis="private">Privat</button>
       </div>
     </div>
-    <button id="createBtn" class="btn big">Raum eröffnen</button>
+    <button id="createBtn" class="btn primary big">Raum eröffnen</button>
 
     <div class="or"><span>oder beitreten</span></div>
 
@@ -59,7 +59,7 @@
     <div class="lobby-head">
       <h2>Spieler <span id="lobbyCount">1/4</span></h2>
     </div>
-    <div id="playerList" class="playerlist"></div>
+    <div id="playerList" class="seats"></div>
 
     <div id="hostControls" hidden>
       <div class="setting">
@@ -78,7 +78,7 @@
           <button class="seg" data-lobbyvis="private">Privat</button>
         </div>
       </div>
-      <button id="startBtn" class="btn big">Spiel starten</button>
+      <button id="startBtn" class="btn primary big">Spiel starten</button>
       <p id="startHint" class="hintline"></p>
     </div>
 
