@@ -457,8 +457,16 @@ function nudge(text) {
   node.classList.add("nudge");
 }
 
+// Muss zur Wertung im Server passen (dort `evaluate`), sonst widerspricht
+// die sofortige Rückmeldung dem Ergebnis.
 function localVerdict(t) {
   const r = state.cur.round;
+  if (r.kind === "series") {
+    const i = Math.floor(t / r.stepInterval);
+    const item = i >= 0 && i < r.items.length ? r.items[i] : null;
+    if (!item || !item.hit) return "wrong";
+    return t - item.t < 80 ? "early" : "hit";
+  }
   if (r.kind === "precision") {
     const err = Math.abs(t - r.triggerAt);
     if (err <= r.tolerance) return err <= 70 ? "perfect" : "hit";
@@ -467,6 +475,15 @@ function localVerdict(t) {
   if (r.triggerAt === null) return "wrong";
   if (t < r.triggerAt + 80) return "early";
   return "hit";
+}
+
+// Referenzpunkt für die angezeigte Reaktionszeit: bei einer Serie der Beginn
+// der getroffenen Aufgabe, sonst der Auslöser.
+function reactionBase(t) {
+  const r = state.cur.round;
+  if (r.kind !== "series") return r.triggerAt;
+  const i = Math.floor(t / r.stepInterval);
+  return i >= 0 && i < r.items.length ? r.items[i].t : null;
 }
 
 const FEEDBACK = {
@@ -483,10 +500,10 @@ function showFeedback(kind, elapsed) {
   node.className = `feedback show fb-${kind}`;
   // Die Zeit nur bei einem Treffer zeigen. Bei „zu früh" wäre der Abstand
   // zum Auslöser negativ und sagt nichts aus.
-  const showMs = (kind === "hit" || kind === "perfect") &&
-    state.cur.round.triggerAt !== null;
+  const base = reactionBase(elapsed);
+  const showMs = (kind === "hit" || kind === "perfect") && base !== null;
   const ms = showMs
-    ? `<small>${Math.max(0, Math.round(elapsed - state.cur.round.triggerAt))} ms</small>`
+    ? `<small>${Math.max(0, Math.round(elapsed - base))} ms</small>`
     : "";
   node.innerHTML = `${f.text}${ms}`;
   sfx[f.sound]?.();

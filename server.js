@@ -2,7 +2,7 @@
 // Keine Abhängigkeiten, kein Build-Schritt. `deno task dev` oder direkt:
 //   deno run --allow-net --allow-read --allow-env --allow-sys server.js
 
-import { buildRoundPlan, makeRound } from "./rounds.js";
+import { buildRoundPlan, itemAt, makeRound } from "./rounds.js";
 
 const PORT = Number(Deno.env.get("PORT") ?? 8000);
 const HOST = Deno.env.get("HOST") ?? "0.0.0.0";
@@ -213,6 +213,25 @@ function startGame(room) {
   later(room, 700, () => nextRound(room));
 }
 
+// Was der Client von einer Runde zu sehen bekommt. `items` bzw. `triggerAt`
+// müssen mit, sonst kann er weder zeichnen noch sofort zurückmelden, ob der
+// Druck saß.
+function wireRound(round) {
+  return {
+    type: round.type,
+    kind: round.kind,
+    bar: round.bar,
+    prompt: round.prompt,
+    hint: round.hint,
+    duration: round.duration,
+    stepInterval: round.stepInterval ?? null,
+    tolerance: round.tolerance ?? null,
+    triggerAt: round.triggerAt ?? null,
+    items: round.items ?? null,
+    payload: round.payload,
+  };
+}
+
 function nextRound(room) {
   room.roundNo++;
   if (room.roundNo >= room.plan.length) return finishGame(room);
@@ -227,18 +246,7 @@ function nextRound(room) {
     total: room.plan.length,
     startAt,
     serverNow: Date.now(),
-    round: {
-      type: round.type,
-      kind: round.kind,
-      bar: round.bar,
-      prompt: round.prompt,
-      hint: round.hint,
-      duration: round.duration,
-      stepInterval: round.stepInterval ?? null,
-      tolerance: round.tolerance ?? null,
-      triggerAt: round.triggerAt,
-      payload: round.payload,
-    },
+    round: wireRound(round),
   });
 
   later(room, PRELUDE_MS + round.duration + GRACE_MS, () => scoreRound(room));
@@ -258,6 +266,56 @@ function clamp(x, lo, hi) {
   return Math.min(Math.max(x, lo), hi);
 }
 
+// Was hat dieser Druck ausgelöst? Eine Stelle für alle drei Rundenarten,
+// damit „die Runde ist entschieden" und die spätere Wertung nicht
+// auseinanderlaufen können.
+//
+// `nearness`: nur wichtig, wenn niemand richtig lag – dann gewinnt die Runde,
+// wer am wenigsten danebengriff. Später gedrückt heißt näher dran.
+function evaluate(round, elapsed) {
+  if (round.kind === "series") {
+    const item = itemAt(round, elapsed);
+    if (!item) return { outcome: "wrong", reaction: null, nearness: elapsed };
+    const reaction = elapsed - item.t;
+    if (!item.hit) return { outcome: "wrong", reaction: null, nearness: elapsed };
+    // Unter 80 ms nach dem Wechsel kann niemand gelesen haben, was da steht –
+    // das war Dauerdrücken, das zufällig auf einen Treffer fiel.
+    if (reaction < MIN_HUMAN_MS) {
+      return { outcome: "early", reaction: null, nearness: elapsed };
+    }
+    return { outcome: "hit", reaction, nearness: elapsed };
+  }
+
+  if (round.kind === "precision") {
+    const err = Math.abs(elapsed - round.triggerAt);
+    const reaction = elapsed - round.triggerAt;
+    if (err <= round.tolerance) {
+      return {
+        outcome: err <= 70 ? "perfect" : "hit",
+        reaction,
+        nearness: -err,
+        err,
+      };
+    }
+    return { outcome: "off", reaction, nearness: -err };
+  }
+
+  // watch
+  if (round.triggerAt === null) {
+    return { outcome: "wrong", reaction: null, nearness: elapsed };
+  }
+  if (elapsed < round.triggerAt + MIN_HUMAN_MS) {
+    return { outcome: "early", reaction: null, nearness: elapsed };
+  }
+  return {
+    outcome: "hit",
+    reaction: elapsed - round.triggerAt,
+    nearness: elapsed,
+  };
+}
+
+const isGood = (o) => o === "hit" || o === "perfect" || o === "held";
+
 function scoreRound(room) {
   const cur = room.current;
   if (!cur || cur.scored) return;
@@ -265,7 +323,6 @@ function scoreRound(room) {
   clearTimers(room);
 
   const { round } = cur;
-  const trigger = round.triggerAt;
   const scale = round.scale ?? 1200;
   const players = [...room.players.values()];
 
@@ -273,64 +330,48 @@ function scoreRound(room) {
   const raws = new Map();
   for (const p of players) {
     const press = cur.presses.get(p.id);
-    let outcome = "miss";
-    let reaction = null;
-    let base = 0;
-    // Wie nah dran war ein Fehlversuch? Nur relevant, wenn niemand richtig
-    // lag – dann gewinnt die Runde, wer am wenigsten danebenlag.
-    let nearness = -Infinity;
 
-    if (round.kind === "precision") {
-      if (press) {
-        const err = Math.abs(press.elapsed - trigger);
-        reaction = press.elapsed - trigger;
-        nearness = -err;
-        if (err <= round.tolerance) {
-          outcome = err <= 70 ? "perfect" : "hit";
-          base = P_MIN + Math.round(P_SPAN * (1 - err / round.tolerance));
-          if (outcome === "perfect") base += P_PERFECT;
-        } else {
-          outcome = "off";
-        }
-      }
-    } else if (trigger === null) {
-      if (press) {
-        outcome = "wrong";
-        nearness = press.elapsed; // spät gedrückt heißt: fast durchgehalten
-      } else {
-        outcome = "held";
-        base = P_HELD;
-      }
-    } else if (!press) {
-      outcome = "miss";
-    } else if (press.elapsed < trigger + MIN_HUMAN_MS) {
-      outcome = "early";
-      nearness = press.elapsed; // je später, desto näher am richtigen Moment
-    } else {
-      outcome = "hit";
-      reaction = press.elapsed - trigger;
-      base = P_MIN + Math.round(P_SPAN * clamp(1 - reaction / scale, 0, 1));
+    if (!press) {
+      // Nicht gedrückt. Bei einer Warterunde ohne Auslöser war genau das
+      // richtig; sonst hat man die Gelegenheit verpasst.
+      const held = round.kind === "watch" && round.triggerAt === null;
+      raws.set(p.id, {
+        outcome: held ? "held" : "miss",
+        reaction: null,
+        base: held ? P_HELD : 0,
+        nearness: -Infinity,
+        at: Infinity,
+      });
+      continue;
     }
 
-    raws.set(p.id, { outcome, reaction, base, nearness });
+    const ev = evaluate(round, press.elapsed);
+    let base = 0;
+    if (ev.outcome === "hit" || ev.outcome === "perfect") {
+      base = round.kind === "precision"
+        ? P_MIN + Math.round(P_SPAN * (1 - ev.err / round.tolerance))
+        : P_MIN + Math.round(P_SPAN * clamp(1 - ev.reaction / scale, 0, 1));
+      if (ev.outcome === "perfect") base += P_PERFECT;
+    }
+    raws.set(p.id, { ...ev, base, at: press.elapsed });
   }
 
-  const isGood = (o) => o === "hit" || o === "perfect" || o === "held";
-
   // Schritt 2: die Runde hat immer einen Sieger. Gibt es Richtige, gewinnt
-  // der Schnellste unter ihnen (bei einer erkannten Falle alle gemeinsam,
-  // dort gibt es keine Zeit zu vergleichen). Lag niemand richtig, gewinnt der
-  // knappste Fehlversuch – sonst könnten alle gleichzeitig verlieren.
+  // wer zuerst richtig gedrückt hat (bei einer erkannten Falle alle
+  // gemeinsam, dort gibt es keine Zeit zu vergleichen). Lag niemand richtig,
+  // gewinnt der knappste Fehlversuch – sonst könnten alle zugleich verlieren.
   const goodOnes = players.filter((p) => isGood(raws.get(p.id).outcome));
   let winners = [];
   let winBonus = 0;
 
   if (goodOnes.length) {
     winBonus = P_WIN;
-    const timed = goodOnes.filter((p) => raws.get(p.id).reaction !== null);
+    const timed = goodOnes.filter((p) => raws.get(p.id).at !== Infinity);
     if (timed.length) {
-      const best = Math.min(...timed.map((p) => raws.get(p.id).reaction));
-      winners = timed.filter((p) => raws.get(p.id).reaction === best);
+      // Absolute Zeit, nicht Reaktionszeit: wer eine Aufgabe früher erkennt,
+      // war besser als jemand, der bei der nächsten schneller zuckt.
+      const best = Math.min(...timed.map((p) => raws.get(p.id).at));
+      winners = timed.filter((p) => raws.get(p.id).at === best);
     } else {
       winners = goodOnes; // alle haben die Falle erkannt
     }
@@ -411,10 +452,9 @@ function scoreRound(room) {
 
 function describeTruth(round) {
   if (round.kind === "precision") return "Die Markierung war der richtige Moment";
-  if (round.kind === "verdict") {
-    return round.triggerAt === null
-      ? "Es stimmte nicht – nicht drücken war richtig"
-      : "Es stimmte – drücken war richtig";
+  if (round.kind === "series") {
+    const total = round.items.filter((i) => i.hit).length;
+    return `${total} von ${round.items.length} Aufgaben passten`;
   }
   return round.triggerAt === null
     ? "Es ist nie passiert – nicht drücken war richtig"
@@ -475,18 +515,7 @@ function attach(ws, room, player) {
       total: room.plan.length,
       startAt: cur.startAt,
       serverNow: Date.now(),
-      round: {
-        type: cur.round.type,
-        kind: cur.round.kind,
-        bar: cur.round.bar,
-        prompt: cur.round.prompt,
-        hint: cur.round.hint,
-        duration: cur.round.duration,
-        stepInterval: cur.round.stepInterval ?? null,
-        tolerance: cur.round.tolerance ?? null,
-        triggerAt: cur.round.triggerAt,
-        payload: cur.round.payload,
-      },
+      round: wireRound(cur.round),
     });
   }
 }
@@ -603,6 +632,17 @@ function handle(ws, msg) {
       if (Date.now() > cur.startAt + cur.round.duration + GRACE_MS) break;
       cur.presses.set(player.id, { elapsed });
       broadcast(room, { t: "pressed", id: player.id });
+
+      // Sobald jemand richtig gedrückt hat, ist die Runde entschieden. Vorher
+      // läuft sie weiter – bei einer Serie kommt die nächste Gelegenheit,
+      // wenn alle die letzte haben durchgehen lassen.
+      if (!cur.closing && isGood(evaluate(cur.round, elapsed).outcome)) {
+        cur.closing = true;
+        // Kurzer Nachlauf, damit ein fast gleichzeitiger Druck des anderen
+        // noch ankommt und mitgewertet wird.
+        later(room, 400, () => scoreRound(room));
+        break;
+      }
       maybeEndEarly(room);
       break;
     }

@@ -28,46 +28,56 @@ Anderer Port: `PORT=9000 deno task dev`
 
 Die Spielfläche **ist** der Knopf: irgendwo hintippen, am Rechner Leertaste.
 
-Jede Runde ist eine von drei Sorten – daran hängt auch, was der Zeitbalken
-oben anzeigt:
+### Serien – die meisten Runden
 
-| Sorte | Was passiert | Balken |
-|---|---|---|
-| **Wissen** | Eine Aussage steht sofort da, drücken nur wenn sie stimmt | die Frist für die ganze Runde |
-| **Schritt** | Ein Element nach dem anderen, drücken beim gesuchten | die Frist für das gerade gezeigte Element |
-| **Warten** | Etwas läuft durch, irgendwann passiert es | keiner – es gibt keine Frist |
-| **Timing** | Ein Balken läuft auf eine Markierung zu | keiner – der Balken im Feld ist die Aufgabe |
+Eine Runde ist eine **Folge von Aufgaben**, eine pro Zeitfenster, ohne Pause
+dazwischen. Die wenigsten passen; gedrückt wird bei der, die zutrifft.
 
-Der Balken gehört immer genau der Entscheidung, um die es gerade geht. Ein
-Balken, der über fünf nacheinander gezeigte Symbole hinwegläuft, gehört zu
-keiner davon; und wo ohnehin der Schnellste gewinnt, braucht es gar keinen.
+Zwei Regeln machen das Ganze aus:
 
-Und weil sonst jeder einfach dauernd drücken würde: **manchmal passiert gar
-nichts.** Wer die Falle erkennt und stillhält, gewinnt die Runde.
+- **Eine verpasste Chance ist nicht das Ende.** Reagiert niemand auf eine
+  passende Aufgabe, läuft die Folge weiter und die nächste kommt. Die Runde
+  ist erst vorbei, wenn jemand richtig gedrückt hat.
+- **Daneben gedrückt kostet die Runde.** Wer auf eine Aufgabe drückt, die nicht
+  passt, ist raus. Weil die meisten Aufgaben nicht passen, bestraft sich
+  blindes Drauflosdrücken von selbst – eine eigene Fallenmechanik braucht es
+  hier nicht.
 
-### Die 17 Rundentypen
+Der Zeitbalken oben gehört immer der Aufgabe, die gerade zu sehen ist: Aufgabe
+erscheint, Balken läuft ab, nächste Aufgabe, Balken wieder voll. Ein Balken,
+der über fünf nacheinander gezeigte Aufgaben hinwegläuft, gehört zu keiner
+Entscheidung und hilft niemandem.
 
-**Wissen** — die Aussage steht sofort da
+### Warten und Timing – der Rest
+
+Vier Runden laufen durch, bis genau einmal etwas passiert. Hier gibt es keine
+Frist pro Aufgabe, also auch keinen Balken – und hier ergibt die **Falle**
+Sinn: manchmal passiert gar nichts, und wer dann stillhält, gewinnt die Runde.
+Dazu kommt eine Timing-Runde, bei der ein Balken im Spielfeld selbst die
+Aufgabe ist.
+
+### Die 15 Rundentypen
+
+**Serien mit Wissen**
 
 - `compare` – Bevölkerung, Fläche, Tiergeschwindigkeit, Berg- und Bauwerkshöhe,
   historische Reihenfolge. Nur Paare mit deutlichem Abstand, damit es Wissen
   bleibt und kein Raten wird.
-- `math` – Stimmt die Rechnung?
-- `stroop` – Steht das Farbwort in seiner eigenen Farbe?
-- `count` – Mehr als N Punkte auf dem Feld?
-- `same` – Sind beide Muster identisch?
-- `word` – Echtes deutsches Wort oder erfunden?
+- `math` – Rechnungen, drücke bei der, die aufgeht.
+- `stroop` – Farbwörter, drücke, wenn eins in seiner eigenen Farbe steht.
+- `count` – Punktefelder, drücke, wenn es mehr als N sind.
+- `same` – Musterpaare, drücke, wenn beide identisch sind.
 
-**Schritt** — ein Element pro Zeitfenster
+**Serien mit Erkennen**
 
-- `symbol` – Symbole nacheinander, eins davon ist das gesuchte.
-- `category` – Wörter nacheinander, eins gehört zur gesuchten Kategorie.
-- `numbers` – Zahlen nacheinander, eine passt zur Regel.
-- `emojihunt` – Ein volles Raster pro Fenster, irgendwann steckt das Gesuchte drin.
-- `colorflash` – Der Bildschirm wechselt die Farbe, drücke bei der gesuchten.
-- `nback` – Drücken, wenn ein Symbol direkt wiederholt wird.
+- `symbol` – Symbole, drücke beim gesuchten.
+- `category` – Wörter, drücke bei einem aus der gesuchten Kategorie.
+- `numbers` – Zahlen, drücke bei der, die zur Regel passt.
+- `emojihunt` – Ein volles Raster pro Fenster, drücke, wenn das Gesuchte
+  darin steckt.
+- `colorflash` – Bildschirmfarben, drücke bei der gesuchten.
 
-**Warten** — es läuft durch, bis es passiert
+**Warten**
 
 - `smileys` – Ein Raster grinsender Gesichter, eins wird traurig.
 - `redtriangle` – Ein rotes Dreieck versteckt sich hinter wandernden Klötzen.
@@ -118,7 +128,7 @@ rounds.js          würfelt die Runden aus (nur Server)
 data.js            Länder, Tiere, Berge, Wörter … (nur Server)
 public/index.html  alle vier Bildschirme
 public/app.js      Verbindung, Lobby, Rundenschleife
-public/render.js   die 17 Renderer
+public/render.js   die Renderer, Serien über ein gemeinsames Gerüst
 public/motion.js   Bewegungsmathematik, von Server und Client geteilt
 public/audio.js    Automatengeräusche aus Oszillatoren, keine Dateien
 public/style.css
@@ -143,12 +153,15 @@ die Dreiecksschwingung in `motion.js`: Server und Client rechnen zu jedem
 Zeitpunkt exakt dieselbe Position aus, unabhängig von der Bildrate. Sonst
 prüfte der Server eine andere Szene als der Spieler sieht.
 
-**Der Balken darf nichts verraten.** Bei Wissensrunden zeigt er die
-Gesamtfrist – deshalb ist die Rundenlänge dort fest, sonst könnte man an
-seinem Stand ablesen, wann gleich etwas passiert. Bei Schrittrunden zeigt er
-nur das Fenster für ein Element; die Gesamtlänge taucht nirgends auf und darf
-folglich vom Auslöser abhängen: die Runde endet ein Fenster nach dem Treffer,
-statt danach noch leer weiterzulaufen.
+**Der Balken darf nichts verraten.** Er zeigt nur das Fenster für die
+aktuelle Aufgabe, nie die Gesamtdauer der Runde. Deshalb kann man an ihm auch
+nicht ablesen, wie viele Aufgaben noch kommen oder wann gleich etwas passiert.
+
+**Eine Stelle entscheidet, was ein Druck ausgelöst hat.** `evaluate()` im
+Server wird sowohl für „ist die Runde jetzt entschieden?" als auch für die
+spätere Wertung benutzt. Zwei getrennte Prüfungen wären genau die Sorte
+Duplikat, die irgendwann auseinanderläuft – und dann widerspricht die
+Rückmeldung auf dem Bildschirm dem Ergebnis.
 
 ### Ehrlich gesagt
 

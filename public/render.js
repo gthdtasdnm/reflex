@@ -4,6 +4,10 @@
 //
 // Alles, was sich bewegt, wird aus t berechnet – nie aufsummiert. Sonst
 // laufen zwei Geräte mit unterschiedlicher Bildrate auseinander.
+//
+// Serienrunden teilen sich ein Gerüst: `seriesRenderer` kümmert sich um das
+// Umschalten zwischen den Aufgaben, die Typen liefern nur, wie eine einzelne
+// Aufgabe aussieht.
 
 import { shapeAt } from "./motion.js";
 
@@ -30,71 +34,154 @@ function grid(cols, cls = "") {
   return g;
 }
 
+function pop(node) {
+  node.classList.remove("pop");
+  void node.offsetWidth;
+  node.classList.add("pop");
+}
+
 // ---------------------------------------------------------------------------
-// Wissensrunden – statisch, es gibt nichts zu animieren.
+// Serien: eine Aufgabe pro Zeitfenster
 // ---------------------------------------------------------------------------
+
+// `setup(round, root)` baut das feste Beiwerk auf (Suchbild, Kategorie …) und
+// liefert `draw(item, index)` für den Wechsel zur nächsten Aufgabe.
+function seriesRenderer(setup) {
+  return (round, root) => {
+    const draw = setup(round, root);
+    let shown = -1;
+    return {
+      frame(t) {
+        const i = Math.min(
+          Math.floor(t / round.stepInterval),
+          round.items.length - 1,
+        );
+        if (i === shown || i < 0) return;
+        shown = i;
+        draw(round.items[i], i);
+      },
+    };
+  };
+}
 
 const renderers = {
-  compare(round, root) {
+  compare: seriesRenderer((round, root) => {
     const p = round.payload;
     const box = el("div", "cmp");
-    box.append(
-      el("div", "cmp-side", p.left),
-      el("div", "cmp-op", p.op),
-      el("div", "cmp-side", p.right),
-    );
+    const left = el("div", "cmp-side");
+    const right = el("div", "cmp-side");
+    box.append(left, el("div", "cmp-op", p.op), right);
     root.append(box, el("div", "cmp-legend", `„${p.op}" heißt: ${p.legend}`));
-    return {};
-  },
+    return (item) => {
+      left.textContent = item.left;
+      right.textContent = item.right;
+      pop(box);
+    };
+  }),
 
-  math(round, root) {
-    const p = round.payload;
-    root.append(el("div", "bignum", `${p.expr} = ${p.shown}`));
-    return {};
-  },
+  math: seriesRenderer((_round, root) => {
+    const node = el("div", "bignum");
+    root.append(node);
+    return (item) => {
+      node.textContent = `${item.expr} = ${item.shown}`;
+      pop(node);
+    };
+  }),
 
-  stroop(round, root) {
-    const p = round.payload;
-    const w = el("div", "stroop", p.word);
-    w.style.color = p.hex;
-    root.append(w);
-    return {};
-  },
+  stroop: seriesRenderer((_round, root) => {
+    const node = el("div", "stroop");
+    root.append(node);
+    return (item) => {
+      node.textContent = item.word;
+      node.style.color = item.hex;
+      pop(node);
+    };
+  }),
 
-  count(round, root) {
+  count: seriesRenderer((_round, root) => {
     const field = el("div", "field");
-    for (const d of round.payload.dots) {
-      const dot = el("div", "dot");
-      dot.style.left = `${d.x}%`;
-      dot.style.top = `${d.y}%`;
-      field.append(dot);
-    }
     root.append(field);
-    return {};
-  },
+    return (item) => {
+      field.textContent = "";
+      for (const d of item.dots) {
+        const dot = el("div", "dot");
+        dot.style.left = `${d.x}%`;
+        dot.style.top = `${d.y}%`;
+        field.append(dot);
+      }
+      pop(field);
+    };
+  }),
 
-  same(round, root) {
-    const p = round.payload;
+  same: seriesRenderer((round, root) => {
     const wrap = el("div", "twin");
-    for (const cells of [p.a, p.b]) {
-      const g = grid(p.cols, "twin-grid");
-      for (const c of cells) g.append(el("div", "cell", c));
-      wrap.append(g);
-    }
+    const grids = [grid(round.payload.cols, "twin-grid"), grid(round.payload.cols, "twin-grid")];
+    wrap.append(...grids);
     root.append(wrap);
-    return {};
-  },
+    return (item) => {
+      for (const [g, cells] of [[grids[0], item.a], [grids[1], item.b]]) {
+        g.textContent = "";
+        for (const c of cells) g.append(el("div", "cell", c));
+      }
+      pop(wrap);
+    };
+  }),
 
-  word(round, root) {
-    root.append(el("div", "bigword", round.payload.word));
-    return {};
-  },
+  symbol: seriesRenderer((round, root) => {
+    const chip = el("div", "target-chip");
+    chip.append(el("span", "target-chip-label", "gesucht"));
+    chip.append(el("span", "target-chip-sym", round.payload.target));
+    const now = el("div", "bigsym");
+    root.append(chip, now);
+    return (item) => {
+      now.textContent = item.s;
+      pop(now);
+    };
+  }),
 
-  // -------------------------------------------------------------------------
-  // Reaktionsrunden
-  // -------------------------------------------------------------------------
+  category: seriesRenderer((round, root) => {
+    const chip = el("div", "target-chip");
+    chip.append(el("span", "target-chip-label", "Kategorie"));
+    chip.append(el("span", "target-chip-name", round.payload.label));
+    const now = el("div", "bigword");
+    root.append(chip, now);
+    return (item) => {
+      now.textContent = item.w;
+      pop(now);
+    };
+  }),
 
-  colorflash(round, root) {
+  numbers: seriesRenderer((round, root) => {
+    const chip = el("div", "target-chip");
+    chip.append(el("span", "target-chip-label", "gesucht"));
+    chip.append(el("span", "target-chip-name", round.payload.ruleText));
+    const now = el("div", "bignum");
+    root.append(chip, now);
+    return (item) => {
+      now.textContent = String(item.n);
+      pop(now);
+    };
+  }),
+
+  emojihunt: seriesRenderer((round, root) => {
+    const p = round.payload;
+    const chip = el("div", "target-chip");
+    chip.append(el("span", "target-chip-label", "gesucht"));
+    chip.append(el("span", "target-chip-sym", p.target));
+    const g = grid(p.cols, "hunt");
+    const cells = [];
+    for (let i = 0; i < round.items[0].cells.length; i++) {
+      const c = el("div", "cell");
+      g.append(c);
+      cells.push(c);
+    }
+    root.append(chip, g);
+    return (item) => {
+      for (let i = 0; i < cells.length; i++) cells[i].textContent = item.cells[i];
+    };
+  }),
+
+  colorflash: seriesRenderer((round, root) => {
     const p = round.payload;
     const surface = el("div", "flash-surface");
     const chip = el("div", "target-chip");
@@ -103,19 +190,14 @@ const renderers = {
     swatch.style.background = p.targetHex;
     chip.append(swatch, el("span", "target-chip-name", p.targetName));
     root.append(surface, chip);
-
-    let last = null;
-    return {
-      frame(t) {
-        const s = stepAt(p.steps, t);
-        const c = s ? s.c : "#141024";
-        if (c !== last) {
-          last = c;
-          surface.style.background = c;
-        }
-      },
+    return (item) => {
+      surface.style.background = item.c;
     };
-  },
+  }),
+
+  // -------------------------------------------------------------------------
+  // Warterunden: ein einzelnes Ereignis, kein Fenstertakt
+  // -------------------------------------------------------------------------
 
   smileys(round, root) {
     const p = round.payload;
@@ -144,25 +226,27 @@ const renderers = {
     };
   },
 
-  symbol(round, root) {
+  arrows(round, root) {
     const p = round.payload;
-    const chip = el("div", "target-chip");
-    chip.append(el("span", "target-chip-label", "gesucht"));
-    chip.append(el("span", "target-chip-sym", p.target));
-    const now = el("div", "bigsym");
-    root.append(chip, now);
+    const g = grid(p.cols, "arrows");
+    const cells = [];
+    for (let i = 0; i < p.count; i++) {
+      const c = el("div", "cell", "▲");
+      g.append(c);
+      cells.push(c);
+    }
+    root.append(g);
 
-    let last = null;
+    let flipped = false;
     return {
       frame(t) {
-        const s = stepAt(p.steps, t);
-        const v = s ? s.s : "";
-        if (v !== last) {
-          last = v;
-          now.textContent = v;
-          now.classList.remove("pop");
-          void now.offsetWidth;
-          now.classList.add("pop");
+        // Alles dreht sich leicht, damit das Umklappen nicht die einzige
+        // Bewegung im Bild ist.
+        g.style.transform = `rotate(${Math.sin(t / 900) * p.spin}deg)`;
+        if (!flipped && round.triggerAt !== null && t >= round.triggerAt) {
+          flipped = true;
+          cells[p.index].textContent = "▼";
+          cells[p.index].classList.add("pop");
         }
       },
     };
@@ -195,8 +279,7 @@ const renderers = {
         const sec = t / 1000;
         for (const m of movers) {
           const pos = shapeAt(m.s, sec);
-          m.node.style.transform =
-            `translate(${pos.x}cqw, ${pos.y}cqh)`;
+          m.node.style.transform = `translate(${pos.x}cqw, ${pos.y}cqh)`;
         }
       },
     };
@@ -223,125 +306,6 @@ const renderers = {
         for (const [k, node] of Object.entries(lamps)) {
           node.classList.toggle("on", k === state);
         }
-      },
-    };
-  },
-
-  nback(round, root) {
-    const p = round.payload;
-    const now = el("div", "bigsym");
-    root.append(now);
-    let last = null;
-    return {
-      frame(t) {
-        const s = stepAt(p.steps, t);
-        const v = s ? s.s : "";
-        if (v !== last) {
-          last = v;
-          now.textContent = v;
-          now.classList.remove("pop");
-          void now.offsetWidth;
-          now.classList.add("pop");
-        }
-      },
-    };
-  },
-
-  arrows(round, root) {
-    const p = round.payload;
-    const g = grid(p.cols, "arrows");
-    const cells = [];
-    for (let i = 0; i < p.count; i++) {
-      const c = el("div", "cell", "▲");
-      g.append(c);
-      cells.push(c);
-    }
-    root.append(g);
-
-    let flipped = false;
-    return {
-      frame(t) {
-        // Alles dreht sich leicht, damit das Umklappen nicht die einzige
-        // Bewegung im Bild ist.
-        g.style.transform = `rotate(${Math.sin(t / 900) * p.spin}deg)`;
-        if (!flipped && round.triggerAt !== null && t >= round.triggerAt) {
-          flipped = true;
-          cells[p.index].textContent = "▼";
-          cells[p.index].classList.add("pop");
-        }
-      },
-    };
-  },
-
-  category(round, root) {
-    const p = round.payload;
-    const chip = el("div", "target-chip");
-    chip.append(el("span", "target-chip-label", "Kategorie"));
-    chip.append(el("span", "target-chip-name", p.label));
-    const now = el("div", "bigword");
-    root.append(chip, now);
-
-    let last = null;
-    return {
-      frame(t) {
-        const s = stepAt(p.steps, t);
-        const v = s ? s.w : "";
-        if (v !== last) {
-          last = v;
-          now.textContent = v;
-          now.classList.remove("pop");
-          void now.offsetWidth;
-          now.classList.add("pop");
-        }
-      },
-    };
-  },
-
-  numbers(round, root) {
-    const p = round.payload;
-    const chip = el("div", "target-chip");
-    chip.append(el("span", "target-chip-label", "gesucht"));
-    chip.append(el("span", "target-chip-name", p.ruleText));
-    const now = el("div", "bignum");
-    root.append(chip, now);
-
-    let last = null;
-    return {
-      frame(t) {
-        const s = stepAt(p.steps, t);
-        const v = s ? String(s.n) : "";
-        if (v !== last) {
-          last = v;
-          now.textContent = v;
-          now.classList.remove("pop");
-          void now.offsetWidth;
-          now.classList.add("pop");
-        }
-      },
-    };
-  },
-
-  emojihunt(round, root) {
-    const p = round.payload;
-    const chip = el("div", "target-chip");
-    chip.append(el("span", "target-chip-label", "gesucht"));
-    chip.append(el("span", "target-chip-sym", p.target));
-    const g = grid(p.cols, "hunt");
-    const cells = [];
-    for (let i = 0; i < p.frames[0].cells.length; i++) {
-      const c = el("div", "cell");
-      g.append(c);
-      cells.push(c);
-    }
-    root.append(chip, g);
-
-    let last = null;
-    return {
-      frame(t) {
-        const f = stepAt(p.frames, t);
-        if (!f || f === last) return;
-        last = f;
-        for (let i = 0; i < cells.length; i++) cells[i].textContent = f.cells[i];
       },
     };
   },

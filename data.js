@@ -173,22 +173,6 @@ export const SCREEN_COLORS = [
   { name: "ORANGE", hex: "#e2691a" },
 ];
 
-export const REAL_WORDS = [
-  "Fenster", "Löffel", "Wolke", "Ampel", "Kissen", "Bürste", "Schlüssel",
-  "Teppich", "Zwiebel", "Kerze", "Spiegel", "Gabel", "Bahnhof", "Kaninchen",
-  "Schublade", "Gießkanne", "Klammer", "Kürbis", "Wimper", "Schornstein",
-  "Handtuch", "Regenbogen", "Sandkasten", "Türklinke", "Kompass", "Muschel",
-  "Ziegel", "Nachtisch", "Hufeisen", "Trompete", "Schneeflocke", "Anker",
-];
-
-// Erfundene Wörter mit deutscher Lautgestalt.
-export const FAKE_WORDS = [
-  "Flurbe", "Knispel", "Trabsel", "Glumper", "Prantel", "Zwirket", "Blachtel",
-  "Kronsel", "Stürbel", "Feschung", "Ramplerei", "Dorgel", "Hubnis", "Klemster",
-  "Schwiete", "Warpel", "Nüstrich", "Grombel", "Placker", "Ziftel", "Murtane",
-  "Krönsel", "Halbrist", "Wemster", "Trolfe", "Schnabsel", "Quirbe", "Panstel",
-];
-
 // Für die Kategorie-Runde: „Drücke, wenn ein TIER erscheint."
 export const CATEGORIES = [
   { label: "TIER", words: ["Igel", "Otter", "Reh", "Wolf", "Dachs", "Möwe", "Luchs", "Biber", "Kranich", "Marder"] },

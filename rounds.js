@@ -2,32 +2,29 @@
 // Runde aus und schickt allen Clients dieselbe fertige Beschreibung. Dadurch
 // braucht der Client keinen Zufall und alle sehen garantiert dasselbe.
 //
-// Jede Runde hat dieselbe Form:
+// Es gibt drei Sorten Runden:
+//
+//   kind: "series"     Eine Folge von Aufgaben, eine pro Zeitfenster. Manche
+//                      sind Treffer, die meisten nicht. Gedrückt wird auf
+//                      einen Treffer. Reagiert niemand, läuft die Folge
+//                      weiter und die nächste Chance kommt – die Runde ist
+//                      erst vorbei, wenn jemand richtig gedrückt hat.
+//   kind: "watch"      Etwas läuft durch, irgendwann passiert es genau einmal.
+//                      Manchmal auch gar nicht: dann gewinnt, wer stillhält.
+//   kind: "precision"  Einen Moment auf den Punkt treffen.
+//
+// Gemeinsame Felder:
 //   type      welcher Renderer sie zeichnet
-//   kind      "verdict" | "watch" | "precision"  – bestimmt die Wertung
-//   bar       was der Zeitbalken oben anzeigt:
-//               "round" – die Frist für die ganze Runde (Wissensrunden)
-//               "step"  – die Frist für das gerade gezeigte Element
-//               "none"  – gar nichts, es gibt keine sinnvolle Frist
-//   duration  Gesamtlänge in ms
-//   triggerAt ms ab Rundenstart, ab wann Drücken richtig ist.
-//             null heißt: in dieser Runde ist Drücken *immer* falsch (Falle).
+//   bar       was der Zeitbalken oben anzeigt: "step" (Frist für die aktuelle
+//             Aufgabe) oder "none" (es gibt keine sinnvolle Frist)
+//   duration  Höchstdauer in ms – bei Serien nur der Fall, dass niemand drückt
 //   scale     ab welcher Reaktionszeit es nur noch die Mindestpunktzahl gibt
-//   payload   alles, was der Renderer zum Zeichnen braucht
 //
-// Zum Zeitbalken: bei Schrittrunden zeigt er das Fenster für *ein* Element.
-// Ein Element erscheint, der Balken läuft ab, das nächste kommt. Ein Balken,
-// der über fünf Symbole hinweg durchläuft, gehört zu keiner Entscheidung und
-// hilft niemandem.
-//
-// Weil bei Schrittrunden die Gesamtlänge nirgends angezeigt wird, darf sie
-// vom Auslöser abhängen – die Runde endet ein Fenster nach dem Treffer. Bei
-// Wissensrunden, wo der Balken die Gesamtfrist zeigt, ist die Länge dagegen
-// fest: sonst könnte man daran ablesen, wann gleich etwas passiert.
+// Serien tragen `items`, Warte- und Präzisionsrunden `triggerAt`.
 
 import {
   ANIMALS, BUILDINGS, CATEGORIES, COLORS, COUNTRIES, EMOJIS, EVENTS,
-  FAKE_WORDS, MOUNTAINS, REAL_WORDS, SCREEN_COLORS, SYMBOLS,
+  MOUNTAINS, SCREEN_COLORS, SYMBOLS,
 } from "./data.js";
 import { coverage } from "./public/motion.js";
 
@@ -67,26 +64,39 @@ function pickPairByGap(list, field, minGap) {
   return sample(list, 2);
 }
 
-// Gerüst für alle Schrittrunden: gleichmäßige Fenster, in einem davon steht
-// das Gesuchte. Danach ist die Runde vorbei – genau ein Fenster Reaktionszeit.
-function stepFrame(count, interval, trapChance = 0.15) {
-  const times = Array.from({ length: count }, (_, i) => i * interval);
-  const trap = coin(trapChance);
-  const idx = trap ? null : int(1, count - 2);
+// ---------------------------------------------------------------------------
+// Serien
+// ---------------------------------------------------------------------------
+
+// Baut die Abfolge: gleichmäßige Fenster, darin verteilte Treffer. Der erste
+// kommt früh, danach folgt alle zwei bis drei Aufgaben der nächste. So gibt es
+// immer eine weitere Chance, falls niemand reagiert hat.
+//
+// Eine Falle wie bei den Warterunden braucht es hier nicht: die meisten
+// Aufgaben sind keine Treffer, blindes Drücken bestraft sich von selbst.
+function series(count, interval, makeItem) {
+  const hits = new Set();
+  for (let i = int(1, 2); i < count; i += int(2, 3)) hits.add(i);
+  // Bei kurzen Folgen kann dabei nur ein einziger Treffer herauskommen – dann
+  // wäre die Runde vorbei, ohne dass jemand eine zweite Gelegenheit hatte.
+  if (hits.size < 2 && count >= 3) hits.add(count - 1);
+
+  const items = [];
+  for (let i = 0; i < count; i++) {
+    const hit = hits.has(i);
+    items.push({ t: i * interval, hit, ...makeItem(hit, items) });
+  }
   return {
-    times,
-    idx,
-    upTo: idx === null ? count : idx, // so viele Ablenkungsschritte
-    triggerAt: idx === null ? null : times[idx],
-    duration: idx === null ? count * interval : (idx + 1) * interval,
-    interval,
+    kind: "series",
+    bar: "step",
+    items,
+    stepInterval: interval,
+    scale: interval,
+    duration: count * interval,
   };
 }
 
-// ---------------------------------------------------------------------------
-// Wissensrunden – die Aussage steht sofort da, triggerAt ist 0 oder null.
-// Großzügige Fristen: Lesen, Nachdenken und Entscheiden muss reinpassen.
-// ---------------------------------------------------------------------------
+// --- Wissen ----------------------------------------------------------------
 
 const COMPARE_MODES = [
   {
@@ -115,247 +125,147 @@ const COMPARE_MODES = [
   },
 ];
 
-const verdict = (extra) => ({
-  kind: "verdict",
-  bar: "round",
-  scale: 2800,
-  ...extra,
-});
-
 function makeCompare() {
   const m = pick(COMPARE_MODES);
-  const [a, b] = m.gap
-    ? pickPairByGap(m.list, m.field, m.gap)
-    : pickPair(m.list, m.field, m.ratio);
+  const lowerWins = m.field === "year"; // „war früher" – der kleinere gewinnt
 
-  // Bei Jahreszahlen gewinnt der kleinere Wert ("war früher").
-  const lowerWins = m.field === "year";
-  const bigger = a[m.field] > b[m.field] ? a : b;
-  const smaller = bigger === a ? b : a;
-  const winner = lowerWins ? smaller : bigger;
-  const loser = winner === a ? b : a;
-
-  const claimTrue = coin();
-  const left = claimTrue ? winner : loser;
-  const right = claimTrue ? loser : winner;
-
-  return verdict({
+  return {
     type: "compare",
     prompt: m.prompt,
-    hint: "Drücke, wenn die Aussage stimmt",
-    duration: 5200,
-    triggerAt: claimTrue ? 0 : null,
-    payload: { left: left.name, right: right.name, op: m.op, legend: m.legend },
-  });
+    hint: "Drücke, sobald eine Aussage stimmt",
+    payload: { op: m.op, legend: m.legend },
+    ...series(6, 2800, (hit) => {
+      const [a, b] = m.gap
+        ? pickPairByGap(m.list, m.field, m.gap)
+        : pickPair(m.list, m.field, m.ratio);
+      const bigger = a[m.field] > b[m.field] ? a : b;
+      const smaller = bigger === a ? b : a;
+      const winner = lowerWins ? smaller : bigger;
+      const loser = winner === a ? b : a;
+      return hit
+        ? { left: winner.name, right: loser.name }
+        : { left: loser.name, right: winner.name };
+    }),
+  };
 }
 
 function makeMath() {
-  const op = pick(["+", "−", "×", "×"]);
-  let a, b, correct;
-  if (op === "×") {
-    a = int(3, 12); b = int(3, 12); correct = a * b;
-  } else if (op === "+") {
-    a = int(17, 89); b = int(14, 79); correct = a + b;
-  } else {
-    a = int(35, 99); b = int(12, a - 8); correct = a - b;
-  }
-
-  const claimTrue = coin();
-  let shown = correct;
-  if (!claimTrue) {
-    const deltas = [1, 2, 3, 9, 10, 11, a, b].filter((d) => d > 0);
-    for (let i = 0; i < 40; i++) {
-      const d = pick(deltas) * (coin() ? 1 : -1);
-      if (correct + d !== correct && correct + d > 0) { shown = correct + d; break; }
-    }
-    if (shown === correct) shown = correct + 1;
-  }
-
-  return verdict({
+  return {
     type: "math",
     prompt: "Stimmt die Rechnung?",
-    hint: "Drücke nur, wenn das Ergebnis richtig ist",
-    duration: 5000,
-    triggerAt: shown === correct ? 0 : null,
-    payload: { expr: `${a} ${op} ${b}`, shown },
-  });
+    hint: "Drücke, sobald eine Rechnung aufgeht",
+    payload: {},
+    ...series(6, 2500, (hit) => {
+      const op = pick(["+", "−", "×", "×"]);
+      let a, b, correct;
+      if (op === "×") {
+        a = int(3, 12); b = int(3, 12); correct = a * b;
+      } else if (op === "+") {
+        a = int(17, 89); b = int(14, 79); correct = a + b;
+      } else {
+        a = int(35, 99); b = int(12, a - 8); correct = a - b;
+      }
+      if (hit) return { expr: `${a} ${op} ${b}`, shown: correct };
+
+      // Danebenliegen, aber plausibel: typische Rechenfehler statt Zufall.
+      const deltas = [1, 2, 3, 9, 10, 11, a, b].filter((d) => d > 0);
+      let shown = correct;
+      for (let i = 0; i < 40 && shown === correct; i++) {
+        const d = pick(deltas) * (coin() ? 1 : -1);
+        if (correct + d > 0 && d !== 0) shown = correct + d;
+      }
+      if (shown === correct) shown = correct + 1;
+      return { expr: `${a} ${op} ${b}`, shown };
+    }),
+  };
 }
 
 function makeStroop() {
-  const word = pick(COLORS);
-  const match = coin();
-  const color = match ? word : pick(COLORS.filter((c) => c.name !== word.name));
-  return verdict({
+  return {
     type: "stroop",
     prompt: "Wort und Farbe gleich?",
-    hint: "Drücke nur, wenn das Wort in seiner eigenen Farbe steht",
-    duration: 4200,
-    scale: 1600,
-    triggerAt: match ? 0 : null,
-    payload: { word: word.name, hex: color.hex },
-  });
+    hint: "Drücke, sobald ein Wort in seiner eigenen Farbe steht",
+    payload: {},
+    ...series(8, 1600, (hit) => {
+      const word = pick(COLORS);
+      const color = hit ? word : pick(COLORS.filter((c) => c.name !== word.name));
+      return { word: word.name, hex: color.hex };
+    }),
+  };
 }
 
 function makeCount() {
-  const n = int(5, 14);
-  const threshold = Math.max(3, n + (coin() ? -1 : 1) * int(1, 2));
-  const dots = [];
-  for (let i = 0; i < n && dots.length < n; i++) {
-    for (let tries = 0; tries < 80; tries++) {
-      const p = { x: rnd(6, 88), y: rnd(6, 88) };
-      if (dots.every((d) => Math.hypot(d.x - p.x, d.y - p.y) > 13)) {
-        dots.push(p);
-        break;
+  const threshold = int(5, 10);
+  const dotsFor = (n) => {
+    const dots = [];
+    for (let i = 0; i < n; i++) {
+      for (let tries = 0; tries < 80; tries++) {
+        const p = { x: rnd(6, 88), y: rnd(6, 88) };
+        if (dots.every((d) => Math.hypot(d.x - p.x, d.y - p.y) > 13)) {
+          dots.push(p);
+          break;
+        }
       }
     }
-  }
-  return verdict({
+    return dots;
+  };
+
+  return {
     type: "count",
     prompt: `Mehr als ${threshold} Punkte?`,
-    hint: "Drücke, wenn es mehr sind",
-    duration: 5500,
-    triggerAt: dots.length > threshold ? 0 : null,
-    payload: { dots, threshold },
-  });
+    hint: `Drücke, sobald mehr als ${threshold} Punkte zu sehen sind`,
+    payload: { threshold },
+    ...series(5, 2800, (hit) => ({
+      dots: dotsFor(hit ? threshold + int(1, 3) : Math.max(2, threshold - int(1, 3))),
+    })),
+  };
 }
 
 function makeSame() {
   const cols = 3;
   const cells = cols * 3;
-  const pool = sample(SYMBOLS, 5);
-  const a = Array.from({ length: cells }, () => pick(pool));
-  const b = a.slice();
-  const identical = coin();
-  if (!identical) {
-    const i = int(0, cells - 1);
-    b[i] = pick(pool.filter((s) => s !== a[i]));
-  }
-  return verdict({
+  return {
     type: "same",
     prompt: "Beide Muster gleich?",
-    hint: "Drücke, wenn sie identisch sind",
-    duration: 5800,
-    triggerAt: identical ? 0 : null,
-    payload: { a, b, cols },
-  });
-}
-
-function makeWord() {
-  const real = coin();
-  return verdict({
-    type: "word",
-    prompt: "Gibt es dieses Wort?",
-    hint: "Drücke nur bei einem echten deutschen Wort",
-    duration: 4200,
-    scale: 2000,
-    triggerAt: real ? 0 : null,
-    payload: { word: real ? pick(REAL_WORDS) : pick(FAKE_WORDS) },
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Schrittrunden – ein Element pro Zeitfenster, der Balken gehört dem Fenster.
-// ---------------------------------------------------------------------------
-
-function makeColorFlash() {
-  const f = stepFrame(6, 1300, 0.18);
-  const target = pick(SCREEN_COLORS);
-  const others = SCREEN_COLORS.filter((c) => c.name !== target.name);
-
-  const steps = [];
-  let prev = null;
-  for (let i = 0; i < f.upTo; i++) {
-    const c = pick(others.filter((o) => o.hex !== prev));
-    prev = c.hex;
-    steps.push({ t: f.times[i], c: c.hex });
-  }
-  if (f.idx !== null) steps.push({ t: f.times[f.idx], c: target.hex });
-
-  return {
-    type: "colorflash",
-    kind: "watch",
-    bar: "step",
-    prompt: `Drücke bei ${target.name}`,
-    hint: `Der Bildschirm wechselt die Farbe – drücke, sobald er ${target.name} wird`,
-    duration: f.duration,
-    stepInterval: f.interval,
-    scale: f.interval,
-    triggerAt: f.triggerAt,
-    payload: { steps, targetName: target.name, targetHex: target.hex },
+    hint: "Drücke, sobald die beiden Muster identisch sind",
+    payload: { cols },
+    ...series(5, 2800, (hit) => {
+      const pool = sample(SYMBOLS, 5);
+      const a = Array.from({ length: cells }, () => pick(pool));
+      const b = a.slice();
+      if (!hit) {
+        const i = int(0, cells - 1);
+        b[i] = pick(pool.filter((s) => s !== a[i]));
+      }
+      return { a, b };
+    }),
   };
 }
+
+// --- Erkennen --------------------------------------------------------------
 
 function makeSymbol() {
-  const f = stepFrame(6, 1300);
   const target = pick(SYMBOLS);
   const others = SYMBOLS.filter((s) => s !== target);
-
-  const steps = [];
-  for (let i = 0; i < f.upTo; i++) steps.push({ t: f.times[i], s: pick(others) });
-  if (f.idx !== null) steps.push({ t: f.times[f.idx], s: target });
-
   return {
     type: "symbol",
-    kind: "watch",
-    bar: "step",
     prompt: "Ist das Symbol zu sehen?",
     hint: "Drücke, sobald genau dieses Symbol erscheint",
-    duration: f.duration,
-    stepInterval: f.interval,
-    scale: f.interval,
-    triggerAt: f.triggerAt,
-    payload: { target, steps },
-  };
-}
-
-function makeNback() {
-  const f = stepFrame(6, 1500);
-  const pool = sample(SYMBOLS, 5);
-
-  const steps = [];
-  for (let i = 0; i < f.upTo; i++) {
-    const prev = steps.length ? steps[steps.length - 1].s : null;
-    steps.push({ t: f.times[i], s: pick(pool.filter((s) => s !== prev)) });
-  }
-  if (f.idx !== null) {
-    steps.push({ t: f.times[f.idx], s: steps[steps.length - 1].s });
-  }
-
-  return {
-    type: "nback",
-    kind: "watch",
-    bar: "step",
-    prompt: "Zweimal dasselbe?",
-    hint: "Drücke, wenn ein Symbol direkt wiederholt wird",
-    duration: f.duration,
-    stepInterval: f.interval,
-    scale: f.interval,
-    triggerAt: f.triggerAt,
-    payload: { steps },
+    payload: { target },
+    ...series(9, 1300, (hit) => ({ s: hit ? target : pick(others) })),
   };
 }
 
 function makeCategory() {
-  const f = stepFrame(5, 1700);
   const cat = pick(CATEGORIES);
   const others = CATEGORIES.filter((c) => c.label !== cat.label)
     .flatMap((c) => c.words);
-
-  const steps = [];
-  for (let i = 0; i < f.upTo; i++) steps.push({ t: f.times[i], w: pick(others) });
-  if (f.idx !== null) steps.push({ t: f.times[f.idx], w: pick(cat.words) });
-
   return {
     type: "category",
-    kind: "watch",
-    bar: "step",
     prompt: `Kategorie: ${cat.label}`,
     hint: `Drücke, sobald ein Wort aus der Kategorie ${cat.label} erscheint`,
-    duration: f.duration,
-    stepInterval: f.interval,
-    scale: f.interval,
-    triggerAt: f.triggerAt,
-    payload: { label: cat.label, steps },
+    payload: { label: cat.label },
+    ...series(8, 1700, (hit) => ({ w: hit ? pick(cat.words) : pick(others) })),
   };
 }
 
@@ -374,61 +284,54 @@ const NUMBER_RULES = [
 ];
 
 function makeNumbers() {
-  const f = stepFrame(6, 1400);
   const rule = pick(NUMBER_RULES);
-
-  const steps = [];
-  for (let i = 0; i < f.upTo; i++) steps.push({ t: f.times[i], n: rule.bad() });
-  if (f.idx !== null) steps.push({ t: f.times[f.idx], n: rule.good() });
-
   return {
     type: "numbers",
-    kind: "watch",
-    bar: "step",
     prompt: `Zahl ${rule.text}?`,
     hint: `Drücke, sobald eine Zahl ${rule.text} erscheint`,
-    duration: f.duration,
-    stepInterval: f.interval,
-    scale: f.interval,
-    triggerAt: f.triggerAt,
-    payload: { ruleText: rule.text, steps },
+    payload: { ruleText: rule.text },
+    ...series(9, 1500, (hit) => ({ n: hit ? rule.good() : rule.bad() })),
   };
 }
 
 function makeEmojiHunt() {
-  // Ein ganzes Raster absuchen dauert länger als ein einzelnes Symbol lesen.
-  const f = stepFrame(5, 1800);
   const cols = 5;
   const rows = 4;
   const target = pick(EMOJIS);
   const others = EMOJIS.filter((e) => e !== target);
-
-  const grid = () => Array.from({ length: cols * rows }, () => pick(others));
-  const frames = [];
-  for (let i = 0; i < f.upTo; i++) frames.push({ t: f.times[i], cells: grid() });
-  if (f.idx !== null) {
-    const cells = grid();
-    cells[int(0, cells.length - 1)] = target;
-    frames.push({ t: f.times[f.idx], cells });
-  }
-
   return {
     type: "emojihunt",
-    kind: "watch",
-    bar: "step",
     prompt: "Suche im Raster",
     hint: `Drücke, sobald ${target} auftaucht`,
-    duration: f.duration,
-    stepInterval: f.interval,
-    scale: f.interval,
-    triggerAt: f.triggerAt,
-    payload: { target, cols, frames },
+    payload: { target, cols },
+    ...series(7, 1900, (hit) => {
+      const cells = Array.from({ length: cols * rows }, () => pick(others));
+      if (hit) cells[int(0, cells.length - 1)] = target;
+      return { cells };
+    }),
+  };
+}
+
+function makeColorFlash() {
+  const target = pick(SCREEN_COLORS);
+  const others = SCREEN_COLORS.filter((c) => c.name !== target.name);
+  return {
+    type: "colorflash",
+    prompt: `Drücke bei ${target.name}`,
+    hint: `Der Bildschirm wechselt die Farbe – drücke, sobald er ${target.name} wird`,
+    payload: { targetName: target.name, targetHex: target.hex },
+    ...series(8, 1300, (hit, sofar) => {
+      if (hit) return { c: target.hex };
+      const prev = sofar.length ? sofar[sofar.length - 1].c : null;
+      return { c: pick(others.filter((o) => o.hex !== prev)).hex };
+    }),
   };
 }
 
 // ---------------------------------------------------------------------------
-// Warterunden – etwas läuft durchgehend, irgendwann passiert es. Hier gibt es
-// keine Frist pro Element, also auch keinen Balken.
+// Warterunden – etwas läuft durchgehend, irgendwann passiert es genau einmal.
+// Hier gibt es keine Frist pro Aufgabe, also auch keinen Balken. Und hier
+// ergibt die Falle Sinn: Warten ist das ganze Spiel.
 // ---------------------------------------------------------------------------
 
 const watching = (extra) => ({
@@ -651,30 +554,37 @@ const GENERATORS = {
   stroop: makeStroop,
   count: makeCount,
   same: makeSame,
-  word: makeWord,
-  colorflash: makeColorFlash,
-  smileys: makeSmileys,
   symbol: makeSymbol,
-  redtriangle: makeRedTriangle,
-  traffic: makeTraffic,
-  nback: makeNback,
-  arrows: makeArrows,
   category: makeCategory,
   numbers: makeNumbers,
   emojihunt: makeEmojiHunt,
+  colorflash: makeColorFlash,
+  smileys: makeSmileys,
+  arrows: makeArrows,
+  redtriangle: makeRedTriangle,
+  traffic: makeTraffic,
   timing: makeTiming,
 };
 
-const KNOWLEDGE = ["compare", "math", "stroop", "count", "same", "word"];
+const KNOWLEDGE = ["compare", "math", "stroop", "count", "same"];
 const REACTION = [
-  "colorflash", "smileys", "symbol", "redtriangle", "traffic",
-  "nback", "arrows", "category", "numbers", "emojihunt", "timing",
+  "symbol", "category", "numbers", "emojihunt", "colorflash",
+  "smileys", "arrows", "redtriangle", "traffic", "timing",
 ];
 
 export const ROUND_TYPES = Object.keys(GENERATORS);
 
 export function makeRound(type) {
   return GENERATORS[type]();
+}
+
+// Welche Aufgabe war zum Zeitpunkt `elapsed` zu sehen? Server und Client
+// müssen hier zum selben Ergebnis kommen, sonst weicht die sofortige
+// Rückmeldung von der Wertung ab.
+export function itemAt(round, elapsed) {
+  const i = Math.floor(elapsed / round.stepInterval);
+  if (i < 0 || i >= round.items.length) return null;
+  return round.items[i];
 }
 
 // Eine Reihenfolge ohne direkte Wiederholung und mit garantierter Mischung
