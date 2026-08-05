@@ -365,7 +365,10 @@ function makeSmileys() {
     hint: "Drücke, sobald einer traurig guckt",
     duration,
     triggerAt: sadAt,
-    payload: { cols, faces, flips, sadIndex, sad: pick(["😢", "🙁", "😭", "😞"]), sadAt },
+    // Nur heruntergezogene Mundwinkel, keine Träne: eine Träne ist ein
+    // zusätzliches Bildelement und sticht schon hervor, bevor man das
+    // Gesicht überhaupt gelesen hat.
+    payload: { cols, faces, flips, sadIndex, sad: "🙁", sadAt },
   });
 }
 

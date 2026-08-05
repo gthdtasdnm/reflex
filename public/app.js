@@ -351,9 +351,7 @@ function startRound(msg) {
 
   $("roundNo").textContent = msg.n;
   $("roundTotal").textContent = msg.total;
-  $("stage").classList.remove("pressed");
-  $("feedback").className = "feedback";
-  $("feedback").textContent = "";
+  clearPressState();
 
   // Ausblenden statt entfernen: sonst wächst die Bühne zwischen den Runden
   // um die Balkenhöhe und alles springt.
@@ -511,6 +509,30 @@ function showFeedback(kind, elapsed) {
     $("game").classList.add("shake");
     setTimeout(() => $("game").classList.remove("shake"), 400);
   }
+
+  // Nach kurzer Zeit die Sicht wieder freigeben. Früher blieben Abdunklung
+  // und Banner bis zum Rundenende stehen – bei einer Serie, die nach einem
+  // Fehlgriff noch etliche Sekunden weiterläuft, wirkte das wie ein
+  // eingefrorener Bildschirm.
+  clearTimeout(showFeedback.id);
+  showFeedback.id = setTimeout(() => {
+    node.classList.remove("show");
+    const stage = $("stage");
+    stage.classList.remove("pressed");
+    stage.classList.add("spent");
+    const good = kind === "hit" || kind === "perfect";
+    const tag = $("pressTag");
+    tag.textContent = good ? "getroffen" : "raus";
+    tag.className = `press-tag show ${good ? "good" : "bad"}`;
+  }, 850);
+}
+
+function clearPressState() {
+  clearTimeout(showFeedback.id);
+  $("stage").classList.remove("pressed", "spent");
+  $("feedback").className = "feedback";
+  $("feedback").textContent = "";
+  $("pressTag").className = "press-tag";
 }
 
 // ---------------------------------------------------------------------------
@@ -523,7 +545,8 @@ function showResult(msg) {
   const cur = state.cur;
   if (cur) cur.phase = "result";
   cancelAnimationFrame(raf);
-  $("stage").classList.remove("live", "pressed");
+  $("stage").classList.remove("live");
+  clearPressState();
   $("timerbar").classList.add("off");
 
   if (state.room) {

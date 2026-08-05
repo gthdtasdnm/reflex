@@ -354,7 +354,30 @@ input:focus { border-color: var(--cyan); }
   box-shadow: inset 0 0 0 2px #29e7ff30;
   pointer-events: none;
 }
+/* Kurz nach dem Druck deutlich abgedunkelt, danach nur noch angedeutet: die
+   Runde läuft weiter und wer daneben griff, will trotzdem zusehen können. */
 .stage.pressed { filter: saturate(.55) brightness(.75); }
+.stage.spent { filter: saturate(.85) brightness(.93); }
+.stage { transition: filter .35s; }
+
+.press-tag {
+  position: absolute;
+  bottom: 2.5cqmin;
+  right: 3cqmin;
+  z-index: 4;
+  padding: .9cqmin 2.4cqmin;
+  border-radius: 999px;
+  font-size: 3cqmin;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .3s;
+}
+.press-tag.show { opacity: 1; }
+.press-tag.good { background: #2bf58a1f; border: 1px solid #2bf58a66; color: var(--good); }
+.press-tag.bad { background: #ff4d5e1f; border: 1px solid #ff4d5e66; color: var(--bad); }
 
 .stage-content {
   position: absolute;
