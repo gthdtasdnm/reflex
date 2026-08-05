@@ -336,7 +336,7 @@ function markPressed(id) {
 let raf = 0;
 
 // Ablauf des Vorlaufs, gemessen in ms *vor* dem Rundenstart.
-const TICKS = [-1800, -1200, -600];
+const TICKS = [-1500, -1000, -500];
 
 function startRound(msg) {
   cancelAnimationFrame(raf);
@@ -348,7 +348,10 @@ function startRound(msg) {
   state.cur = {
     round: msg.round,
     startPerf,
-    pressed: false,
+    // Aufgaben, für die ich schon dran war oder die jemand anders geholt hat.
+    done: new Set(),
+    shownItem: -1,
+    fbItem: -1,
     phase: "prelude",
     lastTick: 0,
   };
@@ -401,6 +404,20 @@ function loop() {
   if (cur.phase === "live") {
     if (cur.renderer) cur.renderer.frame(t);
     updateBar(t);
+    // Beim Sprung zur nächsten Aufgabe ist die Sicht wieder frei und alle
+    // dürfen wieder drücken.
+    const i = itemIndex(t);
+    if (i >= 0 && i !== cur.shownItem) {
+      cur.shownItem = i;
+      // Nur aufräumen, wenn die Rückmeldung noch zur vorigen Aufgabe gehört.
+      // Ein Druck kann zwischen zwei Bildern gefallen sein, also schon zur
+      // neuen – die dürfte man sonst gar nicht zu sehen bekommen.
+      if (cur.fbItem !== i) {
+        $("feedback").classList.remove("show");
+        $("pressTag").className = "press-tag";
+        $("stage").classList.remove("pressed");
+      }
+    }
   }
 
   raf = requestAnimationFrame(loop);
@@ -428,27 +445,37 @@ function updateBar(t) {
 // Drücken
 // ---------------------------------------------------------------------------
 
+// Welche der fünf Aufgaben läuft gerade? Muss mit `itemIndexAt` im Server
+// übereinstimmen, sonst widerspricht die sofortige Rückmeldung der Wertung.
+function itemIndex(t) {
+  const r = state.cur.round;
+  const i = Math.floor(t / r.stepInterval);
+  return i >= 0 && i < r.items.length ? i : -1;
+}
+
 function press() {
   unlock();
   const cur = state.cur;
-  if (!cur || cur.pressed) return;
-  if (cur.locked) return; // jemand war schneller, die Runde ist durch
+  if (!cur) return;
 
-  // Im Vorlauf und während der Rückmeldung passiert nichts. Früher galt ein
-  // Druck im Vorlauf als Fehlstart – wer nach der letzten Runde noch einmal
-  // aufs Display tippte, hatte die nächste damit schon verloren und der
-  // Bildschirm blieb abgedunkelt stehen.
+  // Im Vorlauf und während der Rückmeldung passiert nichts. Ein Druck im
+  // Vorlauf gilt bewusst nicht als Fehlstart: wer nach der letzten Runde noch
+  // einmal aufs Display tippt, soll die nächste nicht schon verloren haben.
   if (cur.phase !== "live") {
     if (cur.phase === "prelude") nudge("Noch nicht …");
     return;
   }
 
   const elapsed = Math.max(0, Math.round(performance.now() - cur.startPerf));
-  cur.pressed = true;
-  send({ t: "press", elapsed });
+  const i = itemIndex(elapsed);
+  if (i < 0) return;
+  // Pro Aufgabe ein Versuch – und nichts mehr, wenn sie schon vergeben ist.
+  if (cur.done.has(i)) return;
 
-  showFeedback(localVerdict(elapsed), elapsed);
-  $("stage").classList.add("pressed");
+  cur.done.add(i);
+  cur.fbItem = i;
+  send({ t: "press", elapsed });
+  showFeedback(localVerdict(i, elapsed), i, elapsed);
 }
 
 function nudge(text) {
@@ -462,31 +489,17 @@ function nudge(text) {
 
 // Muss zur Wertung im Server passen (dort `evaluate`), sonst widerspricht
 // die sofortige Rückmeldung dem Ergebnis.
-function localVerdict(t) {
+function localVerdict(i, t) {
   const r = state.cur.round;
-  if (r.kind === "series") {
-    const i = Math.floor(t / r.stepInterval);
-    const item = i >= 0 && i < r.items.length ? r.items[i] : null;
-    if (!item || !item.hit) return "wrong";
-    return t - item.t < 80 ? "early" : "hit";
-  }
-  if (r.kind === "precision") {
-    const err = Math.abs(t - r.triggerAt);
+  const item = r.items[i];
+  const rel = t - item.t;
+  if (r.precision) {
+    const err = Math.abs(rel - item.at);
     if (err <= r.tolerance) return err <= 70 ? "perfect" : "hit";
     return "off";
   }
-  if (r.triggerAt === null) return "wrong";
-  if (t < r.triggerAt + 80) return "early";
-  return "hit";
-}
-
-// Referenzpunkt für die angezeigte Reaktionszeit: bei einer Serie der Beginn
-// der getroffenen Aufgabe, sonst der Auslöser.
-function reactionBase(t) {
-  const r = state.cur.round;
-  if (r.kind !== "series") return r.triggerAt;
-  const i = Math.floor(t / r.stepInterval);
-  return i >= 0 && i < r.items.length ? r.items[i].t : null;
+  if (!item.hit) return "wrong";
+  return rel < item.at + 80 ? "early" : "hit";
 }
 
 const FEEDBACK = {
@@ -497,16 +510,19 @@ const FEEDBACK = {
   off: { text: "VERFEHLT", sound: "wrong" },
 };
 
-function showFeedback(kind, elapsed) {
+function showFeedback(kind, i, elapsed) {
   const f = FEEDBACK[kind] ?? FEEDBACK.wrong;
   const node = $("feedback");
   node.className = `feedback show fb-${kind}`;
+  // Die Marke der vorigen Aufgabe muss weg – sonst steht bei einem Druck
+  // direkt am Fensterwechsel noch das alte Ergebnis daneben.
+  $("pressTag").className = "press-tag";
   // Die Zeit nur bei einem Treffer zeigen. Bei „zu früh" wäre der Abstand
-  // zum Auslöser negativ und sagt nichts aus.
-  const base = reactionBase(elapsed);
-  const showMs = (kind === "hit" || kind === "perfect") && base !== null;
+  // negativ und sagt nichts aus.
+  const item = state.cur.round.items[i];
+  const showMs = kind === "hit" || kind === "perfect";
   const ms = showMs
-    ? `<small>${Math.max(0, Math.round(elapsed - base))} ms</small>`
+    ? `<small>${Math.max(0, Math.round(elapsed - item.t - item.at))} ms</small>`
     : "";
   node.innerHTML = `${f.text}${ms}`;
   sfx[f.sound]?.();
@@ -514,49 +530,50 @@ function showFeedback(kind, elapsed) {
     $("game").classList.add("shake");
     setTimeout(() => $("game").classList.remove("shake"), 400);
   }
-
-  // Nach kurzer Zeit die Sicht wieder freigeben. Früher blieben Abdunklung
-  // und Banner bis zum Rundenende stehen – bei einer Serie, die nach einem
-  // Fehlgriff noch etliche Sekunden weiterläuft, wirkte das wie ein
-  // eingefrorener Bildschirm.
-  clearTimeout(showFeedback.id);
-  showFeedback.id = setTimeout(() => {
-    node.classList.remove("show");
-    const stage = $("stage");
-    stage.classList.remove("pressed");
-    stage.classList.add("spent");
-    const good = kind === "hit" || kind === "perfect";
-    const tag = $("pressTag");
-    tag.textContent = good ? "getroffen" : "raus";
-    tag.className = `press-tag show ${good ? "good" : "bad"}`;
-  }, 850);
+  fadeFeedback(kind === "hit" || kind === "perfect" ? "getroffen" : "daneben");
 }
 
-// Jemand hat die Runde geholt. Ab hier nimmt der Client keinen Druck mehr an
-// und zeigt, wer schneller war.
+// Rückmeldung kurz zeigen, dann die Sicht wieder freigeben – die Runde läuft
+// mit der nächsten Aufgabe weiter und die will man sehen.
+function fadeFeedback(tagText) {
+  const stage = $("stage");
+  stage.classList.add("pressed");
+  clearTimeout(fadeFeedback.id);
+  fadeFeedback.id = setTimeout(() => {
+    $("feedback").classList.remove("show");
+    stage.classList.remove("pressed");
+    const tag = $("pressTag");
+    tag.textContent = tagText;
+    tag.className = `press-tag show ${
+      tagText === "getroffen" ? "good" : "bad"
+    }`;
+  }, 700);
+}
+
+// Jemand hat *diese* Aufgabe geholt. Ab hier nimmt der Client für sie keinen
+// Druck mehr an und zeigt, wer schneller war. Die nächste Aufgabe ist wieder
+// für alle offen.
 function onLock(msg) {
   const cur = state.cur;
   if (!cur) return;
-  cur.locked = true;
+  cur.done.add(msg.item);
   if (msg.by === state.you) return; // der Gewinner sieht seine eigene Meldung
+  cur.fbItem = msg.item;
 
-  clearTimeout(showFeedback.id);
+  clearTimeout(fadeFeedback.id);
   const node = $("feedback");
   node.className = "feedback show fb-locked";
+  $("pressTag").className = "press-tag";
   const ms = msg.reaction === null || msg.reaction === undefined
     ? ""
     : `<small>${Math.max(0, Math.round(msg.reaction))} ms</small>`;
   node.innerHTML = `${escapeHtml(msg.name)} war schneller${ms}`;
-  $("stage").classList.remove("pressed");
-  $("stage").classList.add("spent");
-  const tag = $("pressTag");
-  tag.textContent = "zu spät";
-  tag.className = "press-tag show bad";
   sfx.miss();
+  fadeFeedback("zu spät");
 }
 
 function clearPressState() {
-  clearTimeout(showFeedback.id);
+  clearTimeout(fadeFeedback.id);
   $("stage").classList.remove("pressed", "spent");
   $("feedback").className = "feedback";
   $("feedback").textContent = "";
@@ -594,24 +611,25 @@ function showResult(msg) {
   const iWon = winners.some((w) => w.id === state.you);
   const others = winners.filter((w) => w.id !== state.you);
 
-  const zeit = (r) =>
-    r.reaction === null || r.reaction === undefined
-      ? ""
-      : ` · ${Math.max(0, Math.round(r.reaction))} ms`;
-
   let winLine = "";
-  if (iWon && winners.length === 1) {
-    winLine = `RUNDE GEWONNEN${zeit(me)}`;
-  } else if (iWon) {
-    winLine = "Runde geteilt";
-  } else if (others.length) {
-    winLine = `Runde an ${others.map((w) => escapeHtml(w.name)).join(" & ")}` +
-      (others.length === 1 ? zeit(others[0]) : "");
+  if (iWon && winners.length === 1) winLine = "RUNDE GEWONNEN";
+  else if (iWon) winLine = "Runde geteilt";
+  else if (others.length) {
+    winLine = `Runde an ${others.map((w) => escapeHtml(w.name)).join(" & ")}`;
   }
 
   const badges = (me?.notes ?? [])
     .filter((n) => n !== "RUNDENSIEG" && n !== "am nächsten dran")
     .map((n) => `<span class="fl-badge">${escapeHtml(n)}</span>`).join("");
+
+  // Wie viele der fünf Aufgaben hat wer geholt? Das ist die eigentliche
+  // Bilanz der Runde und ersetzt die frühere Punktetabelle.
+  const bilanz = msg.results
+    .map((r) =>
+      `<span class="fl-tally${r.id === state.you ? " me" : ""}${
+        r.won ? " won" : ""
+      }"><b>${r.itemsWon}</b>/${r.totalItems} ${escapeHtml(r.name)}</span>`
+    ).join("");
 
   const ov = $("overlay");
   ov.className = "overlay show flash";
@@ -623,6 +641,7 @@ function showResult(msg) {
     me && me.mult > 1 ? `<span class="fl-badge mult">Serie ×${me.mult}</span>` : ""
   }</div>
     <div class="fl-win ${iWon ? "mine" : ""}">${winLine}</div>
+    <div class="fl-tallies">${bilanz}</div>
     <div class="fl-truth">${escapeHtml(msg.truth)}</div>`;
 
   if (me && me.delta > 0) sfx.coin();

@@ -2,7 +2,7 @@
 // Keine Abhängigkeiten, kein Build-Schritt. `deno task dev` oder direkt:
 //   deno run --allow-net --allow-read --allow-env --allow-sys server.js
 
-import { buildRoundPlan, itemAt, makeRound } from "./rounds.js";
+import { buildRoundPlan, itemIndexAt, makeRound } from "./rounds.js";
 
 const PORT = Number(Deno.env.get("PORT") ?? 8000);
 const HOST = Deno.env.get("HOST") ?? "0.0.0.0";
@@ -14,23 +14,26 @@ const PUBLIC = new URL("./public/", import.meta.url);
 // ---------------------------------------------------------------------------
 
 const MAX_PLAYERS = 4;
-const PRELUDE_MS = 4000;   // Frage lesen, dann 3-2-1
+const PRELUDE_MS = 3400;   // Frage lesen, dann 3-2-1
 const GRACE_MS = 900;      // Puffer für Netzlaufzeit nach Rundenende
-const RESULT_MS = 2400;    // kurze Rückmeldung, kein Zwischenstand
+const RESULT_MS = 2200;    // kurze Rückmeldung, kein Zwischenstand
 const MIN_HUMAN_MS = 80;   // darunter war es geraten, nicht reagiert
 
-// Punkte. Es gibt bewusst keine negativen Werte: ein Fehler kostet die Runde
-// und die Serie, mehr nicht. Wer patzt, verliert dadurch schon gegen die
-// anderen – zusätzlicher Abzug würde nur dazu führen, dass am Ende alle im
-// Minus stehen und niemand die Runde gewonnen hat.
-const P_MIN = 150;         // Sockel für eine richtige Reaktion
-const P_SPAN = 850;        // was über Geschwindigkeit dazukommt
-const P_HELD = 550;        // Falle erkannt und stillgehalten
-const P_PERFECT = 250;     // Timing auf den Punkt
-const P_FLASH = 250;       // unter 250 ms reagiert
+// Punkte. Es gibt bewusst keine negativen Werte: ein Fehler kostet die
+// Aufgabe, mehr nicht. Wer patzt, verliert dadurch schon gegen die anderen –
+// zusätzlicher Abzug würde nur dazu führen, dass am Ende alle im Minus
+// stehen und niemand die Runde gewonnen hat.
+//
+// Gewertet wird jede der fünf Aufgaben einzeln, deshalb sind die Beträge pro
+// Aufgabe klein; der Rundensieg kommt obendrauf.
+const P_ITEM_MIN = 100;    // Sockel für eine gewonnene Aufgabe
+const P_ITEM_SPAN = 400;   // was über Geschwindigkeit dazukommt
+const P_SPOTTED = 80;      // richtig erkannt, dass hier nichts zu drücken war
+const P_PERFECT = 150;     // Timing auf den Punkt
+const P_FLASH = 150;       // unter 250 ms reagiert
 const FLASH_MS = 250;
-const P_WIN = 300;         // Rundensieg
-const P_CLOSEST = 150;     // niemand richtig – der beste Fehlversuch
+const P_WIN = 400;         // Rundensieg
+const P_CLOSEST = 150;     // niemand hat etwas geholt – der beste Versuch
 
 // Serie: der eigentliche Nervenkitzel. Baut sich auf, reißt bei jedem Fehler.
 const MULTS = [1, 1, 1.25, 1.5, 2, 2.5, 3];
@@ -213,21 +216,20 @@ function startGame(room) {
   later(room, 700, () => nextRound(room));
 }
 
-// Was der Client von einer Runde zu sehen bekommt. `items` bzw. `triggerAt`
-// müssen mit, sonst kann er weder zeichnen noch sofort zurückmelden, ob der
-// Druck saß.
+// Was der Client von einer Runde zu sehen bekommt. Die fünf Aufgaben müssen
+// mit, sonst kann er weder zeichnen noch sofort zurückmelden, ob der Druck
+// saß.
 function wireRound(round) {
   return {
     type: round.type,
-    kind: round.kind,
     bar: round.bar,
     prompt: round.prompt,
     hint: round.hint,
     duration: round.duration,
-    stepInterval: round.stepInterval ?? null,
+    stepInterval: round.stepInterval,
+    precision: !!round.precision,
     tolerance: round.tolerance ?? null,
-    triggerAt: round.triggerAt ?? null,
-    items: round.items ?? null,
+    items: round.items,
     payload: round.payload,
   };
 }
@@ -238,7 +240,11 @@ function nextRound(room) {
 
   const round = makeRound(room.plan[room.roundNo]);
   const startAt = Date.now() + PRELUDE_MS;
-  room.current = { round, startAt, presses: new Map(), scored: false };
+  room.current = {
+    round, startAt, scored: false,
+    presses: new Map(), // Spieler -> Map(Aufgabenindex -> elapsed)
+    itemWinner: [],     // Aufgabenindex -> Spieler, der sie geholt hat
+  };
 
   broadcast(room, {
     t: "round",
@@ -252,69 +258,37 @@ function nextRound(room) {
   later(room, PRELUDE_MS + round.duration + GRACE_MS, () => scoreRound(room));
 }
 
-function maybeEndEarly(room) {
-  const cur = room.current;
-  if (!cur || cur.scored) return;
-  const active = [...room.players.values()].filter((p) => p.connected);
-  if (!active.length) return;
-  if (active.every((p) => cur.presses.has(p.id))) {
-    later(room, 350, () => scoreRound(room));
-  }
-}
-
 function clamp(x, lo, hi) {
   return Math.min(Math.max(x, lo), hi);
 }
 
-// Was hat dieser Druck ausgelöst? Eine Stelle für alle drei Rundenarten,
-// damit „die Runde ist entschieden" und die spätere Wertung nicht
+// Was hat dieser Druck in *dieser* Aufgabe ausgelöst? Eine Stelle für alle
+// Rundenarten, damit „Aufgabe ist vergeben" und die spätere Wertung nicht
 // auseinanderlaufen können.
 //
-// `nearness`: nur wichtig, wenn niemand richtig lag – dann gewinnt die Runde,
-// wer am wenigsten danebengriff. Später gedrückt heißt näher dran.
-function evaluate(round, elapsed) {
-  if (round.kind === "series") {
-    const item = itemAt(round, elapsed);
-    if (!item) return { outcome: "wrong", reaction: null, nearness: elapsed };
-    const reaction = elapsed - item.t;
-    if (!item.hit) return { outcome: "wrong", reaction: null, nearness: elapsed };
-    // Unter 80 ms nach dem Wechsel kann niemand gelesen haben, was da steht –
-    // das war Dauerdrücken, das zufällig auf einen Treffer fiel.
-    if (reaction < MIN_HUMAN_MS) {
-      return { outcome: "early", reaction: null, nearness: elapsed };
-    }
-    return { outcome: "hit", reaction, nearness: elapsed };
-  }
+// `rel` ist die Zeit seit Beginn des Fensters, `item.at` der Moment darin, ab
+// dem Drücken richtig ist – bei Wissensaufgaben 0, bei einer Ampel der
+// Umschaltmoment.
+function evaluate(round, index, elapsed) {
+  const item = round.items[index];
+  const rel = elapsed - item.t;
 
-  if (round.kind === "precision") {
-    const err = Math.abs(elapsed - round.triggerAt);
-    const reaction = elapsed - round.triggerAt;
+  if (round.precision) {
+    const err = Math.abs(rel - item.at);
     if (err <= round.tolerance) {
-      return {
-        outcome: err <= 70 ? "perfect" : "hit",
-        reaction,
-        nearness: -err,
-        err,
-      };
+      return { outcome: err <= 70 ? "perfect" : "hit", reaction: rel - item.at, err };
     }
-    return { outcome: "off", reaction, nearness: -err };
+    return { outcome: "off", reaction: rel - item.at, err };
   }
 
-  // watch
-  if (round.triggerAt === null) {
-    return { outcome: "wrong", reaction: null, nearness: elapsed };
-  }
-  if (elapsed < round.triggerAt + MIN_HUMAN_MS) {
-    return { outcome: "early", reaction: null, nearness: elapsed };
-  }
-  return {
-    outcome: "hit",
-    reaction: elapsed - round.triggerAt,
-    nearness: elapsed,
-  };
+  if (!item.hit) return { outcome: "wrong", reaction: null };
+  // Unter 80 ms kann niemand gelesen haben, was da steht – das war
+  // Dauerdrücken, das zufällig auf eine passende Aufgabe fiel.
+  if (rel < item.at + MIN_HUMAN_MS) return { outcome: "early", reaction: null };
+  return { outcome: "hit", reaction: rel - item.at };
 }
 
-const isGood = (o) => o === "hit" || o === "perfect" || o === "held";
+const isGood = (o) => o === "hit" || o === "perfect";
 
 function scoreRound(room) {
   const cur = room.current;
@@ -326,58 +300,93 @@ function scoreRound(room) {
   const scale = round.scale ?? 1200;
   const players = [...room.players.values()];
 
-  // Schritt 1: rohes Ergebnis pro Spieler. Fehler geben schlicht null Punkte.
-  const raws = new Map();
-  for (const p of players) {
-    const press = cur.presses.get(p.id);
-
-    if (!press) {
-      // Nicht gedrückt. Drei Gründe: die Falle richtig erkannt, von jemand
-      // anderem überholt worden, oder schlicht verpasst.
-      const held = round.kind === "watch" && round.triggerAt === null;
-      const locked = !!cur.decided && cur.decided.id !== p.id;
-      raws.set(p.id, {
-        outcome: held ? "held" : locked ? "locked" : "miss",
-        reaction: null,
-        base: held ? P_HELD : 0,
-        nearness: -Infinity,
-        at: Infinity,
-      });
-      continue;
+  // Bei Präzisionsaufgaben wird nicht beim ersten richtigen Druck gesperrt –
+  // dort gewinnt, wer der Markierung am nächsten kam, und das steht erst
+  // fest, wenn alle dran waren.
+  if (round.precision) {
+    for (let i = 0; i < round.items.length; i++) {
+      let best = null;
+      for (const p of players) {
+        const at = cur.presses.get(p.id)?.get(i);
+        if (at === undefined) continue;
+        const ev = evaluate(round, i, at);
+        if (!isGood(ev.outcome)) continue;
+        if (best === null || ev.err < best.err) best = { id: p.id, err: ev.err };
+      }
+      if (best) cur.itemWinner[i] = best.id;
     }
-
-    const ev = evaluate(round, press.elapsed);
-    let base = 0;
-    if (ev.outcome === "hit" || ev.outcome === "perfect") {
-      base = round.kind === "precision"
-        ? P_MIN + Math.round(P_SPAN * (1 - ev.err / round.tolerance))
-        : P_MIN + Math.round(P_SPAN * clamp(1 - ev.reaction / scale, 0, 1));
-      if (ev.outcome === "perfect") base += P_PERFECT;
-    }
-    raws.set(p.id, { ...ev, base, at: press.elapsed });
   }
 
-  // Schritt 2: die Runde hat immer einen Sieger – und genau einen, sobald
-  // jemand richtig gedrückt hat. Nur wenn niemand gedrückt hat, kann es
-  // mehrere geben: bei einer erkannten Falle gibt es keine Zeit zu
-  // vergleichen. Lag niemand richtig, gewinnt der knappste Fehlversuch –
-  // sonst könnten alle zugleich verlieren.
-  const goodOnes = players.filter((p) => isGood(raws.get(p.id).outcome));
+  // Schritt 1: jede der fünf Aufgaben einzeln auswerten.
+  const raws = new Map();
+  for (const p of players) {
+    const mine = cur.presses.get(p.id);
+    let earned = 0;
+    let itemsWon = 0;
+    let flash = false;
+    let perfect = false;
+    let best = null;
+    const outcomes = [];
+
+    for (let i = 0; i < round.items.length; i++) {
+      const item = round.items[i];
+      const at = mine?.get(i);
+
+      if (at === undefined) {
+        // Nicht gedrückt. Bei einer Aufgabe, bei der nichts zu drücken war,
+        // ist genau das die richtige Antwort.
+        if (!item.hit && !round.precision) {
+          earned += P_SPOTTED;
+          outcomes.push("spotted");
+        } else if (cur.itemWinner[i] && cur.itemWinner[i] !== p.id) {
+          outcomes.push("locked");
+        } else {
+          outcomes.push("miss");
+        }
+        continue;
+      }
+
+      const ev = evaluate(round, i, at);
+      outcomes.push(cur.itemWinner[i] === p.id ? ev.outcome : "locked");
+      if (cur.itemWinner[i] !== p.id) continue;
+
+      itemsWon++;
+      let pts = round.precision
+        ? P_ITEM_MIN + Math.round(P_ITEM_SPAN * (1 - ev.err / round.tolerance))
+        : P_ITEM_MIN + Math.round(P_ITEM_SPAN * clamp(1 - ev.reaction / scale, 0, 1));
+      if (ev.outcome === "perfect") { pts += P_PERFECT; perfect = true; }
+      if (!round.precision && ev.reaction !== null && ev.reaction < FLASH_MS) {
+        pts += P_FLASH;
+        flash = true;
+      }
+      earned += pts;
+      if (ev.reaction !== null && (best === null || ev.reaction < best)) {
+        best = ev.reaction;
+      }
+    }
+
+    raws.set(p.id, { earned, itemsWon, flash, perfect, best, outcomes });
+  }
+
+  // Schritt 2: Rundensieger ist, wer die meisten Aufgaben geholt hat. Bei
+  // Gleichstand entscheiden die Punkte; sind auch die gleich, teilen sie
+  // sich den Sieg. Hat niemand etwas geholt, geht er an den knappsten
+  // Versuch – es gewinnt immer jemand.
   let winners = [];
   let winBonus = 0;
+  const bestItems = Math.max(...players.map((p) => raws.get(p.id).itemsWon), 0);
 
-  if (cur.decided) {
+  if (bestItems > 0) {
     winBonus = P_WIN;
-    winners = players.filter((p) => p.id === cur.decided.id);
-  } else if (goodOnes.length) {
-    winBonus = P_WIN;
-    winners = goodOnes; // alle haben die Falle erkannt
+    const top = players.filter((p) => raws.get(p.id).itemsWon === bestItems);
+    const bestPts = Math.max(...top.map((p) => raws.get(p.id).earned));
+    winners = top.filter((p) => raws.get(p.id).earned === bestPts);
   } else if (players.length) {
     winBonus = P_CLOSEST;
-    const best = Math.max(...players.map((p) => raws.get(p.id).nearness));
-    if (best > -Infinity) {
-      winners = players.filter((p) => raws.get(p.id).nearness === best);
-    }
+    // Wer am längsten durchgehalten hat, ohne danebenzugreifen.
+    const score = (p) => raws.get(p.id).earned;
+    const bestPts = Math.max(...players.map(score));
+    if (bestPts > 0) winners = players.filter((p) => score(p) === bestPts);
   }
   const winnerIds = new Set(winners.map((p) => p.id));
 
@@ -388,35 +397,27 @@ function scoreRound(room) {
     const streakIn = p.streak;
     const mult = MULTS[Math.min(streakIn, MULTS.length - 1)];
     const notes = [];
-
-    let flash = 0;
-    if (r.outcome === "hit" && r.reaction !== null && r.reaction < FLASH_MS) {
-      flash = P_FLASH;
-      notes.push("BLITZ");
-    }
-    if (r.outcome === "perfect") notes.push("PERFEKT");
+    if (r.flash) notes.push("BLITZ");
+    if (r.perfect) notes.push("PERFEKT");
 
     // Die Serie multipliziert die Leistung, nicht den Rundensieg – sonst
     // reißt der Vorsprung dessen, der einmal vorn liegt, nicht mehr ab.
-    const earned = Math.round((r.base + flash) * mult);
-
+    const earned = Math.round(r.earned * mult);
     let bonus = 0;
     if (winnerIds.has(p.id)) {
       bonus = winBonus;
-      notes.push(goodOnes.length ? "RUNDENSIEG" : "am nächsten dran");
+      notes.push(bestItems > 0 ? "RUNDENSIEG" : "am nächsten dran");
       p.wins++;
     }
 
     const delta = earned + bonus;
     p.score += delta;
+    p.hits += r.itemsWon;
+    if (r.best !== null && (p.best === null || r.best < p.best)) p.best = r.best;
 
-    if (isGood(r.outcome)) {
+    if (winnerIds.has(p.id)) {
       p.streak = streakIn + 1;
       p.bestStreak = Math.max(p.bestStreak, p.streak);
-      p.hits++;
-      if (r.reaction !== null && (p.best === null || r.reaction < p.best)) {
-        p.best = r.reaction;
-      }
     } else {
       p.streak = 0;
     }
@@ -424,8 +425,10 @@ function scoreRound(room) {
     results.push({
       id: p.id,
       name: p.name,
-      outcome: r.outcome,
-      reaction: r.reaction,
+      itemsWon: r.itemsWon,
+      totalItems: round.items.length,
+      reaction: r.best,
+      outcomes: r.outcomes,
       delta,
       mult,
       won: winnerIds.has(p.id),
@@ -440,7 +443,6 @@ function scoreRound(room) {
     n: room.roundNo + 1,
     total: room.plan.length,
     truth: describeTruth(round),
-    anyCorrect: goodOnes.length > 0,
     results,
   });
 
@@ -448,14 +450,9 @@ function scoreRound(room) {
 }
 
 function describeTruth(round) {
-  if (round.kind === "precision") return "Die Markierung war der richtige Moment";
-  if (round.kind === "series") {
-    const total = round.items.filter((i) => i.hit).length;
-    return `${total} von ${round.items.length} Aufgaben passten`;
-  }
-  return round.triggerAt === null
-    ? "Es ist nie passiert – nicht drücken war richtig"
-    : "Ab dem Moment war Drücken richtig";
+  if (round.precision) return `${round.items.length} Markierungen zu treffen`;
+  const total = round.items.filter((i) => i.hit).length;
+  return `${total} von ${round.items.length} Aufgaben passten`;
 }
 
 function finishGame(room) {
@@ -621,36 +618,37 @@ function handle(ws, msg) {
     case "press": {
       const cur = room.current;
       if (!cur || cur.scored) break;
-      if (cur.presses.has(player.id)) break;
       const elapsed = Number(msg.elapsed);
       if (!Number.isFinite(elapsed) || elapsed < 0) break;
-      // Zu spät eingetrudelt zählt nicht mehr.
       if (elapsed > cur.round.duration + 250) break;
       if (Date.now() > cur.startAt + cur.round.duration + GRACE_MS) break;
-      // Ist die Runde schon entschieden, zählt kein Druck mehr. Der Client
-      // sperrt zwar selbst, aber ein Druck kann unterwegs gewesen sein.
-      if (cur.decided) break;
 
-      cur.presses.set(player.id, { elapsed });
+      const i = itemIndexAt(cur.round, elapsed);
+      if (i < 0) break;
+
+      // Pro Aufgabe genau ein Versuch. Und ist sie schon vergeben, zählt
+      // kein Druck mehr – der Client sperrt zwar selbst, aber ein Druck kann
+      // unterwegs gewesen sein. Bei Präzisionsaufgaben wird nicht gesperrt:
+      // dort dürfen alle dieselbe Markierung versuchen.
+      const mine = cur.presses.get(player.id) ?? new Map();
+      if (mine.has(i)) break;
+      if (!cur.round.precision && cur.itemWinner[i]) break;
+
+      mine.set(i, elapsed);
+      cur.presses.set(player.id, mine);
       broadcast(room, { t: "pressed", id: player.id });
 
-      // Sobald jemand richtig gedrückt hat, ist die Runde entschieden: es
-      // gibt genau einen Gewinner, alle anderen sind ab hier gesperrt.
-      // Vorher läuft sie weiter – bei einer Serie kommt die nächste
-      // Gelegenheit, wenn alle die letzte haben durchgehen lassen.
-      const ev = evaluate(cur.round, elapsed);
-      if (isGood(ev.outcome)) {
-        cur.decided = { id: player.id, elapsed, reaction: ev.reaction };
+      const ev = evaluate(cur.round, i, elapsed);
+      if (isGood(ev.outcome) && !cur.round.precision) {
+        cur.itemWinner[i] = player.id;
         broadcast(room, {
           t: "lock",
+          item: i,
           by: player.id,
           name: player.name,
           reaction: ev.reaction,
         });
-        later(room, 800, () => scoreRound(room));
-        break;
       }
-      maybeEndEarly(room);
       break;
     }
 
@@ -694,7 +692,6 @@ function dropPlayer(ws) {
   }
   pushState(room);
   pushRoomList();
-  if (room.phase === "playing") maybeEndEarly(room);
 }
 
 // ---------------------------------------------------------------------------

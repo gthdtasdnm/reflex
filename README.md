@@ -28,36 +28,40 @@ Anderer Port: `PORT=9000 deno task dev`
 
 Die Spielfläche **ist** der Knopf: irgendwo hintippen, am Rechner Leertaste.
 
-### Serien – die meisten Runden
+### Fünf Aufgaben pro Runde
 
-Eine Runde ist eine **Folge von Aufgaben**, eine pro Zeitfenster, ohne Pause
-dazwischen. Die wenigsten passen; gedrückt wird bei der, die zutrifft.
+Jede Runde besteht aus **genau fünf Aufgaben derselben Kategorie**, eine pro
+Zeitfenster, ohne Pause dazwischen. Alle fünf werden gespielt – die Runde
+endet nicht, wenn jemand eine davon holt. Beide Spieler bekommen also in
+jeder Runde fünfmal dieselbe Art Frage.
 
-Zwei Regeln machen das Ganze aus:
+Zwei oder drei der fünf passen; bei den übrigen ist Stillhalten die richtige
+Antwort. Nie alle fünf, nie keine: sonst könnte man blind durchdrücken oder
+hätte nichts zu gewinnen.
 
-- **Eine verpasste Chance ist nicht das Ende.** Reagiert niemand auf eine
-  passende Aufgabe, läuft die Folge weiter und die nächste kommt. Die Runde
-  ist erst vorbei, wenn jemand richtig gedrückt hat.
-- **Daneben gedrückt kostet die Runde.** Wer auf eine Aufgabe drückt, die nicht
-  passt, ist raus. Weil die meisten Aufgaben nicht passen, bestraft sich
-  blindes Drauflosdrücken von selbst – eine eigene Fallenmechanik braucht es
-  hier nicht.
-- **Nur einer gewinnt.** Der erste richtige Druck beendet die Runde und sperrt
-  die Eingabe bei allen anderen. Wer zu spät kommt, sieht, wer schneller war
-  und mit welcher Zeit.
+**Jede Aufgabe wird einzeln gewertet:**
 
-Der Zeitbalken oben gehört immer der Aufgabe, die gerade zu sehen ist: Aufgabe
-erscheint, Balken läuft ab, nächste Aufgabe, Balken wieder voll. Ein Balken,
-der über fünf nacheinander gezeigte Aufgaben hinwegläuft, gehört zu keiner
-Entscheidung und hilft niemandem.
+- Bei einer, die passt, gewinnt sie, wer zuerst drückt. Ab diesem Moment ist
+  sie für die anderen gesperrt – sie sehen sofort, wer schneller war und mit
+  welcher Zeit. Mit der nächsten Aufgabe sind alle wieder dabei.
+- Bei einer, die nicht passt, gewinnt jeder Punkte, der die Finger stillhält.
+  Wer drückt, verliert diese eine Aufgabe – und nur diese.
+- Ein Fehlgriff kostet also nie die ganze Runde. Die nächste Aufgabe kommt
+  gleich.
 
-### Warten und Timing – der Rest
+Der Zeitbalken oben gehört immer der Aufgabe, die gerade zu sehen ist:
+Aufgabe erscheint, Balken läuft ab, nächste Aufgabe, Balken wieder voll. Ein
+Balken, der über mehrere Aufgaben hinwegläuft, gehört zu keiner Entscheidung
+und hilft niemandem.
 
-Vier Runden laufen durch, bis genau einmal etwas passiert. Hier gibt es keine
-Frist pro Aufgabe, also auch keinen Balken – und hier ergibt die **Falle**
-Sinn: manchmal passiert gar nichts, und wer dann stillhält, gewinnt die Runde.
-Dazu kommt eine Timing-Runde, bei der ein Balken im Spielfeld selbst die
-Aufgabe ist.
+**Rundensieger** ist, wer die meisten der fünf Aufgaben geholt hat. Bei
+Gleichstand entscheiden die Punkte. Die Bilanz steht nach jeder Runde kurz auf
+dem Schirm: `3/5 Mo · 2/5 Aylin`.
+
+Bei den Warteaufgaben – Ampel, rotes Dreieck, Smileys, Pfeile – passiert das
+Ereignis nicht sofort, sondern irgendwann im Fenster. Oder gar nicht: dann ist
+Stillhalten richtig. Bei der Timing-Runde wird nicht gesperrt, dort dürfen
+alle dieselbe Markierung versuchen und es gewinnt, wer näher dran war.
 
 ### Die 15 Rundentypen
 
@@ -93,31 +97,32 @@ Aufgabe ist.
 
 ### Punkte
 
-**Es gibt keine Minuspunkte.** Ein Fehler kostet die Runde und die Serie, mehr
-nicht. Wer danebengreift, verliert dadurch schon gegen die anderen – zusätzlich
-Punkte abzuziehen führte nur dazu, dass am Ende alle im Minus standen und
-niemand die Runde gewonnen hatte.
+**Es gibt keine Minuspunkte.** Ein Fehler kostet die Aufgabe, mehr nicht. Wer
+danebengreift, verliert dadurch schon gegen die anderen – zusätzlich Punkte
+abzuziehen führte nur dazu, dass am Ende alle im Minus standen und niemand
+die Runde gewonnen hatte.
 
-- Treffer: 150–1000, je schneller desto mehr.
-- Falle erkannt und stillgehalten: 550.
-- **Rundensieg: +300.** Den gibt es in *jeder* Runde, und in aller Regel
-  genau einmal: der erste richtige Druck entscheidet, danach ist die Eingabe
-  bei allen anderen gesperrt. Sie sehen sofort, wer schneller war und mit
-  welcher Zeit. Geteilt wird der Sieg nur, wenn niemand gedrückt hat und
-  mehrere gemeinsam eine Falle erkannt haben – da gibt es keine Zeiten zu
-  vergleichen. Lag ausnahmsweise niemand richtig, bekommt den Sieg
-  abgeschwächt (+150), wer am nächsten dran war. Es gewinnt also immer
-  jemand.
-- **Blitz: +250** für eine Reaktion unter 250 Millisekunden.
-- **Perfekt: +250** für ein Timing auf den Punkt.
-- **Serie:** Jede richtige Runde steigert den Multiplikator – ×1,25, ×1,5, ×2,
-  ×2,5, bis ×3. Ein einziger Fehler setzt ihn auf null. Der Multiplikator gilt
-  für die eigene Leistung, nicht für den Rundensieg: sonst reißt der Vorsprung
-  dessen, der einmal vorn liegt, nicht mehr ab.
+Pro Aufgabe:
+
+- Aufgabe geholt: 100–500, je schneller desto mehr.
+- Richtig stillgehalten, wo nichts zu drücken war: 80.
+- **Blitz: +150** für eine Reaktion unter 250 Millisekunden.
+- **Perfekt: +150** für ein Timing auf den Punkt.
+
+Pro Runde:
+
+- **Rundensieg: +400** für die meisten geholten Aufgaben. Den gibt es in
+  *jeder* Runde: bei Gleichstand entscheiden die Punkte, und hat ausnahmsweise
+  niemand etwas geholt, bekommt ihn abgeschwächt (+150), wer am besten
+  durchkam. Es gewinnt also immer jemand.
+- **Serie:** Jede gewonnene Runde steigert den Multiplikator – ×1,25, ×1,5,
+  ×2, ×2,5, bis ×3. Eine verlorene Runde setzt ihn auf null. Der
+  Multiplikator gilt für die eigene Leistung, nicht für den Rundensieg: sonst
+  reißt der Vorsprung dessen, der einmal vorn liegt, nicht mehr ab.
 
 Der Punktestand steht durchgehend unten in der Leiste. Zwischen den Runden
 gibt es deshalb keine Tabelle, nur eine kurze Einblendung: eigener Zuwachs,
-verdiente Boni, wer die Runde geholt hat.
+verdiente Boni und die Aufgabenbilanz.
 
 ### Räume
 
@@ -161,8 +166,8 @@ Zeitpunkt exakt dieselbe Position aus, unabhängig von der Bildrate. Sonst
 prüfte der Server eine andere Szene als der Spieler sieht.
 
 **Der Balken darf nichts verraten.** Er zeigt nur das Fenster für die
-aktuelle Aufgabe, nie die Gesamtdauer der Runde. Deshalb kann man an ihm auch
-nicht ablesen, wie viele Aufgaben noch kommen oder wann gleich etwas passiert.
+aktuelle Aufgabe, nie die Gesamtdauer der Runde. Weil außerdem jede Runde
+gleich viele Aufgaben hat, verrät auch die Rundenlänge nichts.
 
 **Eine Stelle entscheidet, was ein Druck ausgelöst hat.** `evaluate()` im
 Server wird sowohl für „ist die Runde jetzt entschieden?" als auch für die

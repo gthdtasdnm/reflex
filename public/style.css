@@ -568,6 +568,29 @@ input:focus { border-color: var(--cyan); }
 .fl-win.mine { color: var(--gold); text-shadow: 0 0 22px #ffd4004d; }
 .fl-truth { font-size: 3.4cqmin; color: var(--dim); max-width: 90%; }
 
+/* Wer hat wie viele der fünf Aufgaben geholt – die Bilanz der Runde. */
+.fl-tallies { display: flex; flex-wrap: wrap; gap: 2cqmin; justify-content: center; }
+.fl-tally {
+  padding: 1cqmin 2.6cqmin;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #ffffff0d;
+  font-size: 3.2cqmin;
+  color: var(--dim);
+}
+.fl-tally b { color: var(--ink); font-size: 1.25em; }
+.fl-tally.me { border-color: #29e7ff66; }
+.fl-tally.won { border-color: #ffd40088; background: #ffd4001a; color: var(--gold); }
+.fl-tally.won b { color: var(--gold); }
+
+/* Zähler unter dem Timing-Balken: die wievielte der fünf Markierungen. */
+.track-count {
+  font-size: 3.4cqmin;
+  font-weight: 800;
+  letter-spacing: .12em;
+  color: var(--dim);
+}
+
 /* --- Rundeninhalte ------------------------------------------------------- */
 
 .cmp { display: flex; align-items: center; justify-content: center; gap: 3cqmin; width: 100%; }

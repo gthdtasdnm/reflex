@@ -2,31 +2,36 @@
 // Runde aus und schickt allen Clients dieselbe fertige Beschreibung. Dadurch
 // braucht der Client keinen Zufall und alle sehen garantiert dasselbe.
 //
-// Es gibt drei Sorten Runden:
+// Eine Runde besteht immer aus genau fünf Aufgaben derselben Kategorie, eine
+// pro Zeitfenster. Alle fünf werden gespielt – die Runde endet nicht, wenn
+// jemand eine davon holt. Jede Aufgabe wird einzeln gewertet.
 //
-//   kind: "series"     Eine Folge von Aufgaben, eine pro Zeitfenster. Manche
-//                      sind Treffer, die meisten nicht. Gedrückt wird auf
-//                      einen Treffer. Reagiert niemand, läuft die Folge
-//                      weiter und die nächste Chance kommt – die Runde ist
-//                      erst vorbei, wenn jemand richtig gedrückt hat.
-//   kind: "watch"      Etwas läuft durch, irgendwann passiert es genau einmal.
-//                      Manchmal auch gar nicht: dann gewinnt, wer stillhält.
-//   kind: "precision"  Einen Moment auf den Punkt treffen.
+// Aufbau einer Runde:
+//   type          welcher Renderer sie zeichnet
+//   prompt/hint   Frage und Erklärung, gelten für alle fünf Aufgaben
+//   stepInterval  Länge eines Fensters in ms
+//   duration      5 × stepInterval
+//   scale         ab welcher Reaktionszeit es nur noch den Sockel gibt
+//   precision     true = auf den Punkt treffen statt so früh wie möglich
+//   tolerance     nur bei precision
+//   payload       rundenweite Daten (Suchsymbol, Kategorie, Schwelle …)
+//   items         die fünf Aufgaben
 //
-// Gemeinsame Felder:
-//   type      welcher Renderer sie zeichnet
-//   bar       was der Zeitbalken oben anzeigt: "step" (Frist für die aktuelle
-//             Aufgabe) oder "none" (es gibt keine sinnvolle Frist)
-//   duration  Höchstdauer in ms – bei Serien nur der Fall, dass niemand drückt
-//   scale     ab welcher Reaktionszeit es nur noch die Mindestpunktzahl gibt
-//
-// Serien tragen `items`, Warte- und Präzisionsrunden `triggerAt`.
+// Eine Aufgabe:
+//   t     Beginn ihres Fensters, relativ zum Rundenstart
+//   hit   gibt es hier etwas zu drücken?
+//   at    ab wann *innerhalb* des Fensters. Bei Wissensaufgaben 0 – die
+//         Aussage steht sofort da. Bei Warteaufgaben der Moment, in dem die
+//         Ampel grün wird, der Smiley kippt, das Dreieck herauskommt.
+//   …     was der Renderer sonst noch braucht
 
 import {
   ANIMALS, BUILDINGS, CATEGORIES, COLORS, COUNTRIES, EMOJIS, EVENTS,
   MOUNTAINS, SCREEN_COLORS, SYMBOLS,
 } from "./data.js";
 import { coverage } from "./public/motion.js";
+
+const ITEMS = 5;
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const int = (a, b) => Math.floor(rnd(a, b + 1));
@@ -64,39 +69,35 @@ function pickPairByGap(list, field, minGap) {
   return sample(list, 2);
 }
 
-// ---------------------------------------------------------------------------
-// Serien
-// ---------------------------------------------------------------------------
+// Zwei oder drei der fünf Aufgaben sind Treffer. Nie alle: sonst könnte man
+// blind auf jede drücken. Nie keine: sonst gäbe es in der Runde nichts zu
+// gewinnen.
+function hitPlan(all = false) {
+  if (all) return new Set([0, 1, 2, 3, 4]);
+  return new Set(shuffle([0, 1, 2, 3, 4]).slice(0, coin() ? 2 : 3));
+}
 
-// Baut die Abfolge: gleichmäßige Fenster, darin verteilte Treffer. Der erste
-// kommt früh, danach folgt alle zwei bis drei Aufgaben der nächste. So gibt es
-// immer eine weitere Chance, falls niemand reagiert hat.
-//
-// Eine Falle wie bei den Warterunden braucht es hier nicht: die meisten
-// Aufgaben sind keine Treffer, blindes Drücken bestraft sich von selbst.
-function series(count, interval, makeItem) {
-  const hits = new Set();
-  for (let i = int(1, 2); i < count; i += int(2, 3)) hits.add(i);
-  // Bei kurzen Folgen kann dabei nur ein einziger Treffer herauskommen – dann
-  // wäre die Runde vorbei, ohne dass jemand eine zweite Gelegenheit hatte.
-  if (hits.size < 2 && count >= 3) hits.add(count - 1);
-
+function build(interval, makeItem, opts = {}) {
+  const hits = hitPlan(opts.allHits);
   const items = [];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < ITEMS; i++) {
     const hit = hits.has(i);
-    items.push({ t: i * interval, hit, ...makeItem(hit, items) });
+    items.push({ t: i * interval, hit, at: 0, ...makeItem(hit, i, items) });
   }
+  const { allHits: _ignored, ...rest } = opts;
   return {
-    kind: "series",
-    bar: "step",
+    bar: opts.precision ? "none" : "step",
     items,
     stepInterval: interval,
-    scale: interval,
-    duration: count * interval,
+    duration: ITEMS * interval,
+    scale: opts.scale ?? interval,
+    ...rest,
   };
 }
 
-// --- Wissen ----------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Wissen – die Aussage steht sofort im Fenster, `at` bleibt 0
+// ---------------------------------------------------------------------------
 
 const COMPARE_MODES = [
   {
@@ -132,9 +133,9 @@ function makeCompare() {
   return {
     type: "compare",
     prompt: m.prompt,
-    hint: "Drücke, sobald eine Aussage stimmt",
+    hint: "Drücke bei jeder Aussage, die stimmt",
     payload: { op: m.op, legend: m.legend },
-    ...series(6, 2800, (hit) => {
+    ...build(2400, (hit) => {
       const [a, b] = m.gap
         ? pickPairByGap(m.list, m.field, m.gap)
         : pickPair(m.list, m.field, m.ratio);
@@ -153,9 +154,9 @@ function makeMath() {
   return {
     type: "math",
     prompt: "Stimmt die Rechnung?",
-    hint: "Drücke, sobald eine Rechnung aufgeht",
+    hint: "Drücke bei jeder Rechnung, die aufgeht",
     payload: {},
-    ...series(6, 2500, (hit) => {
+    ...build(2200, (hit) => {
       const op = pick(["+", "−", "×", "×"]);
       let a, b, correct;
       if (op === "×") {
@@ -184,9 +185,9 @@ function makeStroop() {
   return {
     type: "stroop",
     prompt: "Wort und Farbe gleich?",
-    hint: "Drücke, sobald ein Wort in seiner eigenen Farbe steht",
+    hint: "Drücke bei jedem Wort, das in seiner eigenen Farbe steht",
     payload: {},
-    ...series(8, 1600, (hit) => {
+    ...build(1500, (hit) => {
       const word = pick(COLORS);
       const color = hit ? word : pick(COLORS.filter((c) => c.name !== word.name));
       return { word: word.name, hex: color.hex };
@@ -213,9 +214,9 @@ function makeCount() {
   return {
     type: "count",
     prompt: `Mehr als ${threshold} Punkte?`,
-    hint: `Drücke, sobald mehr als ${threshold} Punkte zu sehen sind`,
+    hint: `Drücke jedes Mal, wenn es mehr als ${threshold} Punkte sind`,
     payload: { threshold },
-    ...series(5, 2800, (hit) => ({
+    ...build(2600, (hit) => ({
       dots: dotsFor(hit ? threshold + int(1, 3) : Math.max(2, threshold - int(1, 3))),
     })),
   };
@@ -227,9 +228,9 @@ function makeSame() {
   return {
     type: "same",
     prompt: "Beide Muster gleich?",
-    hint: "Drücke, sobald die beiden Muster identisch sind",
+    hint: "Drücke jedes Mal, wenn die beiden Muster identisch sind",
     payload: { cols },
-    ...series(5, 2800, (hit) => {
+    ...build(2600, (hit) => {
       const pool = sample(SYMBOLS, 5);
       const a = Array.from({ length: cells }, () => pick(pool));
       const b = a.slice();
@@ -242,7 +243,9 @@ function makeSame() {
   };
 }
 
-// --- Erkennen --------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Erkennen – auch hier steht der Inhalt sofort im Fenster
+// ---------------------------------------------------------------------------
 
 function makeSymbol() {
   const target = pick(SYMBOLS);
@@ -250,9 +253,9 @@ function makeSymbol() {
   return {
     type: "symbol",
     prompt: "Ist das Symbol zu sehen?",
-    hint: "Drücke, sobald genau dieses Symbol erscheint",
+    hint: "Drücke jedes Mal, wenn genau dieses Symbol erscheint",
     payload: { target },
-    ...series(9, 1300, (hit) => ({ s: hit ? target : pick(others) })),
+    ...build(1250, (hit) => ({ s: hit ? target : pick(others) })),
   };
 }
 
@@ -263,9 +266,9 @@ function makeCategory() {
   return {
     type: "category",
     prompt: `Kategorie: ${cat.label}`,
-    hint: `Drücke, sobald ein Wort aus der Kategorie ${cat.label} erscheint`,
+    hint: `Drücke bei jedem Wort aus der Kategorie ${cat.label}`,
     payload: { label: cat.label },
-    ...series(8, 1700, (hit) => ({ w: hit ? pick(cat.words) : pick(others) })),
+    ...build(1600, (hit) => ({ w: hit ? pick(cat.words) : pick(others) })),
   };
 }
 
@@ -288,9 +291,9 @@ function makeNumbers() {
   return {
     type: "numbers",
     prompt: `Zahl ${rule.text}?`,
-    hint: `Drücke, sobald eine Zahl ${rule.text} erscheint`,
+    hint: `Drücke bei jeder Zahl ${rule.text}`,
     payload: { ruleText: rule.text },
-    ...series(9, 1500, (hit) => ({ n: hit ? rule.good() : rule.bad() })),
+    ...build(1400, (hit) => ({ n: hit ? rule.good() : rule.bad() })),
   };
 }
 
@@ -302,9 +305,9 @@ function makeEmojiHunt() {
   return {
     type: "emojihunt",
     prompt: "Suche im Raster",
-    hint: `Drücke, sobald ${target} auftaucht`,
+    hint: `Drücke jedes Mal, wenn ${target} im Raster steckt`,
     payload: { target, cols },
-    ...series(7, 1900, (hit) => {
+    ...build(1800, (hit) => {
       const cells = Array.from({ length: cols * rows }, () => pick(others));
       if (hit) cells[int(0, cells.length - 1)] = target;
       return { cells };
@@ -318,9 +321,9 @@ function makeColorFlash() {
   return {
     type: "colorflash",
     prompt: `Drücke bei ${target.name}`,
-    hint: `Der Bildschirm wechselt die Farbe – drücke, sobald er ${target.name} wird`,
+    hint: `Der Bildschirm wechselt die Farbe – drücke bei jedem ${target.name}`,
     payload: { targetName: target.name, targetHex: target.hex },
-    ...series(8, 1300, (hit, sofar) => {
+    ...build(1250, (hit, _i, sofar) => {
       if (hit) return { c: target.hex };
       const prev = sofar.length ? sofar[sofar.length - 1].c : null;
       return { c: pick(others.filter((o) => o.hex !== prev)).hex };
@@ -329,62 +332,80 @@ function makeColorFlash() {
 }
 
 // ---------------------------------------------------------------------------
-// Warterunden – etwas läuft durchgehend, irgendwann passiert es genau einmal.
-// Hier gibt es keine Frist pro Aufgabe, also auch keinen Balken. Und hier
-// ergibt die Falle Sinn: Warten ist das ganze Spiel.
+// Warten – im Fenster passiert etwas erst nach einer Weile, oder gar nicht.
+// Hier trägt die Aufgabe ein `at`.
 // ---------------------------------------------------------------------------
 
-const watching = (extra) => ({
-  kind: "watch",
-  bar: "none",
-  scale: 1200,
-  ...extra,
-});
+function makeTraffic() {
+  const interval = 2400;
+  return {
+    type: "traffic",
+    prompt: "Drücke bei GRÜN",
+    hint: "Fünf Ampeln – gelb ist eine Falle, nur grün zählt",
+    payload: {},
+    scale: 1000,
+    ...build(interval, (hit) => {
+      const steps = [{ t: 0, s: "red" }];
+      const at = hit ? int(750, interval - 800) : null;
+      let t = int(350, 650);
+      while (t < (at ?? interval - 250) - 320) {
+        if (coin(0.45)) {
+          steps.push({ t, s: "yellow" });
+          steps.push({ t: t + int(140, 260), s: "red" });
+        }
+        t += int(400, 700);
+      }
+      if (at !== null) steps.push({ t: at, s: "green" });
+      steps.sort((a, b) => a.t - b.t);
+      return { at: at ?? 0, steps };
+    }),
+  };
+}
 
 function makeSmileys() {
-  const duration = 6500;
+  const interval = 2400;
   const cols = 5;
   const count = cols * 4;
   const happy = ["🙂", "😀", "😊", "😄"];
-  const faces = Array.from({ length: count }, () => pick(happy));
-  const trap = coin(0.15);
-  const sadAt = trap ? null : Math.round(rnd(1500, duration - 1400));
-  const sadIndex = int(0, count - 1);
-
-  // Kosmetisches Gewusel, damit nicht einfach „die einzige Änderung" auffällt.
-  const flips = [];
-  for (let t = 240; t < duration; t += int(200, 300)) {
-    const i = int(0, count - 1);
-    if (sadAt !== null && t > sadAt && i === sadIndex) continue;
-    flips.push({ t, i, f: pick(happy) });
-  }
-
-  return watching({
+  return {
     type: "smileys",
     prompt: "Ist ein trauriger Smiley zu sehen?",
-    hint: "Drücke, sobald einer traurig guckt",
-    duration,
-    triggerAt: sadAt,
-    // Nur heruntergezogene Mundwinkel, keine Träne: eine Träne ist ein
-    // zusätzliches Bildelement und sticht schon hervor, bevor man das
-    // Gesicht überhaupt gelesen hat.
-    payload: { cols, faces, flips, sadIndex, sad: "🙁", sadAt },
-  });
+    hint: "Fünf Raster – drücke jedes Mal, sobald einer traurig guckt",
+    payload: { cols, count, sad: "🙁" },
+    scale: 1100,
+    ...build(interval, (hit) => {
+      const at = hit ? int(700, interval - 750) : null;
+      const sadIndex = int(0, count - 1);
+      const faces = Array.from({ length: count }, () => pick(happy));
+      // Kosmetisches Gewusel, damit nicht einfach „die einzige Änderung"
+      // auffällt.
+      const flips = [];
+      for (let t = 220; t < interval; t += int(200, 300)) {
+        const i = int(0, count - 1);
+        if (at !== null && t > at && i === sadIndex) continue;
+        flips.push({ t, i, f: pick(happy) });
+      }
+      return { at: at ?? 0, faces, flips, sadIndex };
+    }),
+  };
 }
 
 function makeArrows() {
-  const duration = 6500;
+  const interval = 2200;
   const cols = 5;
   const count = cols * 4;
-  const trap = coin(0.15);
-  return watching({
+  return {
     type: "arrows",
     prompt: "Zeigt ein Pfeil nach unten?",
-    hint: "Drücke, sobald sich einer umdreht",
-    duration,
-    triggerAt: trap ? null : Math.round(rnd(1500, duration - 1400)),
-    payload: { cols, count, index: int(0, count - 1), spin: rnd(6, 14) },
-  });
+    hint: "Fünf Raster – drücke jedes Mal, sobald sich einer umdreht",
+    payload: { cols, count },
+    scale: 1000,
+    ...build(interval, (hit) => ({
+      at: hit ? int(650, interval - 700) : 0,
+      index: int(0, count - 1),
+      spin: rnd(6, 14),
+    })),
+  };
 }
 
 // Ab wann gilt das Dreieck als aufgedeckt? Bewusst früh – sobald ein
@@ -393,10 +414,10 @@ function makeArrows() {
 // also für alle gleich.
 const TRI_REVEALED = 0.90;
 
-function coverPath(tri, cand, duration) {
+function coverPath(tri, cand, window) {
   if (coverage(tri, cand, 0) < 0.99) return { valid: false };
   let first = null;
-  for (let t = 0; t <= duration; t += 20) {
+  for (let t = 0; t <= window; t += 20) {
     const cov = coverage(tri, cand, t / 1000);
     if (first === null) {
       if (cov < TRI_REVEALED) first = t;
@@ -408,21 +429,17 @@ function coverPath(tri, cand, duration) {
   return { valid: true, revealAt: first };
 }
 
-function makeRedTriangle() {
-  const duration = 5200;
-  const trap = coin(0.15);
+function triangleScene(hit, window) {
   const tri = { size: 17, x: rnd(20, 60), y: rnd(20, 60) };
-
   let cover = null;
-  let revealAt = null;
+  let at = null;
 
-  for (let attempt = 0; attempt < 800 && !cover; attempt++) {
-    // Für die Falle ein großer, träger Klotz: er wackelt sichtbar, gibt das
-    // Dreieck in der Rundenzeit aber nicht frei.
-    const big = trap;
-    const w = big ? rnd(46, 58) : rnd(26, 36);
-    const h = big ? rnd(46, 58) : rnd(26, 36);
-    const speed = big ? [1.5, 3.5] : [5, 20];
+  for (let attempt = 0; attempt < 700 && !cover; attempt++) {
+    // Soll nichts aufgedeckt werden, deckt ein großer träger Klotz zu: er
+    // wackelt sichtbar, gibt das Dreieck im Fenster aber nicht frei.
+    const w = hit ? rnd(26, 36) : rnd(46, 58);
+    const h = hit ? rnd(26, 36) : rnd(46, 58);
+    const speed = hit ? [14, 34] : [1.5, 3.5];
     const cand = {
       w, h,
       x: Math.min(Math.max(rnd(tri.x + tri.size - w + 2, tri.x - 2), 0), 100 - w),
@@ -431,121 +448,89 @@ function makeRedTriangle() {
       vy: rnd(speed[0], speed[1]) * (coin() ? 1 : -1),
       c: "#2b3350",
     };
-
-    const path = coverPath(tri, cand, duration);
+    const path = coverPath(tri, cand, window);
     if (!path.valid) continue;
 
-    if (trap) {
-      if (path.revealAt === null) { cover = cand; revealAt = null; }
-    } else if (path.revealAt !== null &&
-      path.revealAt >= 1400 && path.revealAt <= duration - 1300) {
+    if (hit) {
+      if (path.revealAt !== null &&
+        path.revealAt >= 600 && path.revealAt <= window - 750) {
+        cover = cand;
+        at = path.revealAt;
+      }
+    } else if (path.revealAt === null) {
       cover = cand;
-      revealAt = path.revealAt;
     }
   }
 
   // Notausgang: waagerechte Fahrt, die das Dreieck garantiert freigibt.
   if (!cover) {
-    const w = 32, h = 32;
+    const w = 30, h = 30;
     cover = {
       w, h,
       x: Math.min(Math.max(tri.x + tri.size - w + 2, 0), 100 - w),
       y: Math.min(Math.max(tri.y - 4, 0), 100 - h),
-      vx: -12, vy: 0, c: "#2b3350",
+      vx: hit ? -24 : -1.5, vy: 0, c: "#2b3350",
     };
-    revealAt = coverPath(tri, cover, duration).revealAt ?? 2500;
-    revealAt = Math.min(Math.max(revealAt, 1400), duration - 1300);
+    at = coverPath(tri, cover, window).revealAt;
+    if (hit) at = Math.min(Math.max(at ?? 900, 600), window - 750);
   }
 
   // Ablenkung: Klötze, die das Dreieck zu keinem Zeitpunkt berühren.
-  const decoyColors = ["#3a2f6b", "#1f4d5c", "#4a2b46", "#2f4a2b", "#5c4423"];
+  const decoyColors = ["#3a2f6b", "#1f4d5c", "#4a2b46", "#2f4a2b"];
   const decoyShapes = ["rect", "circle", "tri"];
   const decoys = [];
-  for (let i = 0; i < 5; i++) {
-    for (let attempt = 0; attempt < 300; attempt++) {
+  for (let i = 0; i < 4; i++) {
+    for (let attempt = 0; attempt < 200; attempt++) {
       const w = rnd(14, 26);
       const cand = {
         w, h: rnd(14, 26),
         x: rnd(0, 100 - w), y: rnd(0, 70),
-        vx: rnd(6, 24) * (coin() ? 1 : -1),
-        vy: rnd(6, 24) * (coin() ? 1 : -1),
+        vx: rnd(8, 26) * (coin() ? 1 : -1),
+        vy: rnd(8, 26) * (coin() ? 1 : -1),
         c: decoyColors[i % decoyColors.length],
         shape: pick(decoyShapes),
       };
       cand.y = Math.min(cand.y, 100 - cand.h);
       let clean = true;
-      for (let t = 0; t <= duration; t += 40) {
+      for (let t = 0; t <= window; t += 50) {
         if (coverage(tri, cand, t / 1000) > 0.03) { clean = false; break; }
       }
       if (clean) { decoys.push(cand); break; }
     }
   }
 
-  return watching({
-    type: "redtriangle",
-    prompt: "Finde das rote Dreieck",
-    hint: "Drücke, sobald es hinter den Klötzen hervorkommt",
-    duration,
-    triggerAt: revealAt,
-    payload: { tri, cover, decoys },
-  });
+  return { at: hit ? at : 0, tri, cover, decoys };
 }
 
-function makeTraffic() {
-  const duration = 6000;
-  const trap = coin(0.15);
-  const steps = [{ t: 0, s: "red" }];
-  let t = int(700, 1200);
-
-  // Gelbe Zuckungen als Fehlstart-Falle.
-  while (t < duration - 1400) {
-    if (coin(0.45)) {
-      steps.push({ t, s: "yellow" });
-      steps.push({ t: t + int(160, 300), s: "red" });
-    }
-    t += int(500, 950);
-  }
-
-  let triggerAt = null;
-  if (!trap) {
-    const candidates = [];
-    for (let g = 1500; g <= duration - 1300; g += 100) {
-      if (steps.every((s) => Math.abs(s.t - g) > 220)) candidates.push(g);
-    }
-    triggerAt = candidates.length ? pick(candidates) : 2500;
-    for (let i = steps.length - 1; i >= 0; i--) {
-      if (steps[i].t >= triggerAt) steps.splice(i, 1);
-    }
-    steps.push({ t: triggerAt, s: "green" });
-  }
-  steps.sort((a, b) => a.t - b.t);
-
-  return watching({
-    type: "traffic",
-    prompt: "Drücke bei GRÜN",
-    hint: "Gelb ist eine Falle – nur Grün zählt",
-    duration,
-    triggerAt,
-    payload: { steps },
-  });
+function makeRedTriangle() {
+  const interval = 2600;
+  return {
+    type: "redtriangle",
+    prompt: "Finde das rote Dreieck",
+    hint: "Fünfmal – drücke jedes Mal, sobald es hinter den Klötzen hervorkommt",
+    payload: {},
+    scale: 1100,
+    ...build(interval, (hit) => triangleScene(hit, interval)),
+  };
 }
 
 function makeTiming() {
-  // Der Balken im Spielfeld ist hier die Aufgabe – der oben wäre doppelt.
-  const duration = 4200;
-  const markPct = rnd(0.42, 0.78);
-  const tolerance = 450;
+  // Hier ist jede der fünf Aufgaben zu treffen; der Balken im Spielfeld ist
+  // die Aufgabe, ein zweiter oben wäre doppelt gemoppelt.
+  const interval = 2300;
+  const tolerance = 380;
   return {
     type: "timing",
-    kind: "precision",
-    bar: "none",
     prompt: "Genau auf die Linie",
-    hint: "Drücke exakt, wenn der Balken die Markierung erreicht",
-    duration,
-    scale: tolerance,
+    hint: "Fünfmal – drücke jedes Mal genau dann, wenn der Balken die Markierung erreicht",
+    payload: {},
+    precision: true,
     tolerance,
-    triggerAt: Math.round(duration * markPct),
-    payload: { markPct },
+    scale: tolerance,
+    ...build(interval, () => {
+      const markPct = rnd(0.4, 0.75);
+      return { at: Math.round(interval * markPct), markPct };
+    }, { allHits: true, precision: true, tolerance, scale: tolerance }),
   };
 }
 
@@ -576,18 +561,18 @@ const REACTION = [
 ];
 
 export const ROUND_TYPES = Object.keys(GENERATORS);
+export const ITEMS_PER_ROUND = ITEMS;
 
 export function makeRound(type) {
   return GENERATORS[type]();
 }
 
-// Welche Aufgabe war zum Zeitpunkt `elapsed` zu sehen? Server und Client
-// müssen hier zum selben Ergebnis kommen, sonst weicht die sofortige
-// Rückmeldung von der Wertung ab.
-export function itemAt(round, elapsed) {
+// In welchem Fenster liegt dieser Zeitpunkt? Server und Client müssen hier
+// zum selben Ergebnis kommen, sonst weicht die sofortige Rückmeldung von der
+// Wertung ab.
+export function itemIndexAt(round, elapsed) {
   const i = Math.floor(elapsed / round.stepInterval);
-  if (i < 0 || i >= round.items.length) return null;
-  return round.items[i];
+  return i >= 0 && i < round.items.length ? i : -1;
 }
 
 // Eine Reihenfolge ohne direkte Wiederholung und mit garantierter Mischung
