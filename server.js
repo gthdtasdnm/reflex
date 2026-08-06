@@ -14,6 +14,15 @@ const PUBLIC = new URL("./public/", import.meta.url);
 // ---------------------------------------------------------------------------
 
 const MAX_PLAYERS = 4;
+
+/**
+ * Karenzzeit: so lange bleibt ein Platz reserviert, wenn die Verbindung weg ist.
+ * Wer den Link teilt, wechselt dabei zwangsläufig die App – auf dem Handy stirbt
+ * dabei der Socket. Ohne diese Reserve löst sich der eigene Raum genau in dem
+ * Moment auf, in dem man ihn herumschickt. Gleicher Wert in allen vier Spielen.
+ */
+const REJOIN_MS = 60_000;
+
 const PRELUDE_MS = 3400;   // Frage lesen, dann 3-2-1
 const GRACE_MS = 900;      // Puffer für Netzlaufzeit nach Rundenende
 const RESULT_MS = 2200;    // kurze Rückmeldung, kein Zwischenstand
@@ -105,8 +114,24 @@ function clearTimers(room) {
 
 function destroyRoom(room) {
   clearTimers(room);
+  for (const p of room.players.values()) {
+    if (p.dropTimer) clearTimeout(p.dropTimer);
+  }
   rooms.delete(room.code);
   pushRoomList();
+}
+
+/**
+ * Der Host ist immer jemand, der auch da ist. Geht er raus oder ist seine
+ * Verbindung weg, rückt der nächste Anwesende nach – sonst steht der Raum ohne
+ * Host da und niemand kann die Runde starten.
+ */
+function ensureHost(room) {
+  const current = room.players.get(room.hostId);
+  if (current?.connected) return;
+  const all = [...room.players.values()];
+  const next = all.find((p) => p.connected) ?? all[0];
+  room.hostId = next ? next.id : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -489,10 +514,12 @@ function backToLobby(room) {
 
 function attach(ws, room, player) {
   browsing.delete(ws);
+  if (player.dropTimer) { clearTimeout(player.dropTimer); player.dropTimer = null; }
   ws._room = room;
   ws._player = player;
   player.ws = ws;
   player.connected = true;
+  ensureHost(room);
   send(player, {
     t: "joined",
     you: player.id,
@@ -517,7 +544,7 @@ function attach(ws, room, player) {
 function makePlayer(name, ready) {
   return {
     id: token(), token: token(), name: cleanName(name),
-    ws: null, score: 0, streak: 0, bestStreak: 0, best: null,
+    ws: null, dropTimer: null, score: 0, streak: 0, bestStreak: 0, best: null,
     hits: 0, wins: 0, ready, connected: true,
   };
 }
@@ -659,12 +686,18 @@ function handle(ws, msg) {
       break;
 
     case "leave":
-      dropPlayer(ws);
+      dropPlayer(ws, { immediate: true });
       break;
   }
 }
 
-function dropPlayer(ws) {
+/**
+ * Verbindung weg oder Knopf gedrückt. Der Unterschied ist wichtig: „Raum
+ * verlassen" ist eine Entscheidung und wirkt sofort, ein Verbindungsabbruch
+ * bekommt eine Karenzzeit – auch in der Lobby, denn wer den Raumlink
+ * verschickt, ist dabei zwangsläufig kurz aus dem Tab raus.
+ */
+function dropPlayer(ws, { immediate = false } = {}) {
   const room = ws._room;
   const player = ws._player;
   browsing.delete(ws);
@@ -672,24 +705,34 @@ function dropPlayer(ws) {
   ws._room = null;
   ws._player = null;
 
-  if (room.phase === "lobby") {
-    room.players.delete(player.id);
-  } else {
-    player.connected = false;
-    player.ws = null;
+  player.connected = false;
+  player.ws = null;
+  player.ready = false;
+
+  if (immediate) {
+    releaseSeat(room, player.id);
+    return;
   }
 
-  if (room.hostId === player.id) {
-    const next = [...room.players.values()].find((p) => p.connected) ??
-      [...room.players.values()][0];
-    room.hostId = next ? next.id : null;
-  }
+  if (player.dropTimer) clearTimeout(player.dropTimer);
+  // Nicht über later(): die Rundentimer werden bei jedem Übergang geleert,
+  // dieser hier darf das nicht mitmachen.
+  player.dropTimer = setTimeout(() => releaseSeat(room, player.id), REJOIN_MS);
 
-  if (room.players.size === 0 || ![...room.players.values()].some((p) => p.connected)) {
-    later(room, 90_000, () => {
-      if (![...room.players.values()].some((p) => p.connected)) destroyRoom(room);
-    });
-  }
+  ensureHost(room);
+  pushState(room);
+  pushRoomList();
+}
+
+/** Platz endgültig freigeben – nach Ablauf der Karenzzeit oder auf Knopfdruck. */
+function releaseSeat(room, id) {
+  const player = room.players.get(id);
+  if (!player) return;
+  if (player.dropTimer) { clearTimeout(player.dropTimer); player.dropTimer = null; }
+  room.players.delete(id);
+  ensureHost(room);
+
+  if (room.players.size === 0) { destroyRoom(room); return; }
   pushState(room);
   pushRoomList();
 }

@@ -212,9 +212,14 @@ function renderRooms(list) {
   }
 }
 
+// Gemeinsam mit den anderen drei Spielen: wer bei einem seinen Namen eintippt,
+// findet ihn beim nächsten schon vor. "reflexName" bleibt als Rückfall, damit
+// niemand seinen alten Namen verliert.
+const NAME_KEY = "spiele_name";
+
 function joinCode(code) {
   unlock();
-  localStorage.setItem("reflexName", $("name").value.trim());
+  localStorage.setItem(NAME_KEY, $("name").value.trim());
   state.pendingIntent = { t: "join", code, name: $("name").value.trim() };
   if (sock?.readyState === WebSocket.OPEN) {
     send(state.pendingIntent);
@@ -233,7 +238,7 @@ function renderRoom() {
   if (r.phase === "lobby") {
     show("lobby");
     $("roomCode").textContent = r.code;
-    $("lobbyCount").textContent = `${r.players.length}/4`;
+    $("lobbyCount").textContent = `${r.players.filter((p) => p.connected).length}/4`;
     $("roomVis").textContent = r.isPublic
       ? "Öffentlich – steht in der Liste"
       : "Privat – nur mit Code";
@@ -272,10 +277,12 @@ function renderRoom() {
       b.classList.toggle("sel", (b.dataset.lobbyvis === "public") === r.isPublic);
     }
 
-    const others = r.players.filter((p) => p.id !== r.hostId);
+    // Wer gerade weg ist, zählt nicht mit – sonst blockiert er den Start.
+    const here = r.players.filter((p) => p.connected);
+    const others = here.filter((p) => p.id !== r.hostId);
     const allReady = others.every((p) => p.ready);
     $("startBtn").disabled = !allReady;
-    $("startHint").textContent = r.players.length < 2
+    $("startHint").textContent = here.length < 2
       ? "Allein spielbar zum Ausprobieren – zu zweit macht es mehr her."
       : allReady
       ? "Alle bereit!"
@@ -714,8 +721,9 @@ function wireInput() {
 
 function wireUi() {
   const nameInput = $("name");
-  nameInput.value = session()?.name ?? localStorage.getItem("reflexName") ?? "";
-  const remember = () => localStorage.setItem("reflexName", nameInput.value.trim());
+  nameInput.value = session()?.name ?? localStorage.getItem(NAME_KEY) ??
+    localStorage.getItem("reflexName") ?? "";
+  const remember = () => localStorage.setItem(NAME_KEY, nameInput.value.trim());
 
   for (const b of document.querySelectorAll("[data-vis]")) {
     b.addEventListener("click", () => {
