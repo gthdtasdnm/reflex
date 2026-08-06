@@ -812,8 +812,28 @@ function wireUi() {
     $("help").hidden = true;
   });
 
+  // Geteilter Link: .../reflex/#AB3K – der Link ist die ganze Interaktion. Wer
+  // ihn öffnet, soll im Raum landen und ihn nicht erst in einer Liste suchen
+  // müssen. Ist der Name schon bekannt, passiert das ohne einen Klick.
   const hash = location.hash.replace("#", "").toUpperCase();
-  if (hash.length >= 3 && hash.length <= 5) $("codeInput").value = hash;
+  const sharedCode = hash.length >= 3 && hash.length <= 5 ? hash : null;
+  if (sharedCode) {
+    $("codeInput").value = sharedCode;
+    const tag = document.querySelector("#screen-home .tag");
+    if (tag) tag.textContent = `Du bist eingeladen – Raum ${sharedCode}.`;
+
+    // Den Knopf austauschen statt umbeschriften: sonst bliebe der alte
+    // Klick-Handler dran und würde zusätzlich einen neuen Raum aufmachen.
+    const alt = $("createBtn");
+    const btn = alt.cloneNode(true);
+    btn.textContent = "Beitreten";
+    alt.replaceWith(btn);
+    btn.addEventListener("click", () => { remember(); joinCode(sharedCode); });
+
+    // Name schon bekannt? Dann ohne Zwischenschritt hinein. Gesendet wird das
+    // erst, wenn die Verbindung steht – dafür ist pendingIntent da.
+    if (nameInput.value.trim()) joinCode(sharedCode);
+  }
 
   // Platzhalter sofort zeichnen. Sonst klafft dort eine Lücke, solange die
   // Verbindung noch steht – und wer sie nie bekommt, sieht nur ein Loch.

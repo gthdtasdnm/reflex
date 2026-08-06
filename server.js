@@ -16,12 +16,23 @@ const PUBLIC = new URL("./public/", import.meta.url);
 const MAX_PLAYERS = 4;
 
 /**
- * Karenzzeit: so lange bleibt ein Platz reserviert, wenn die Verbindung weg ist.
- * Wer den Link teilt, wechselt dabei zwangsläufig die App – auf dem Handy stirbt
- * dabei der Socket. Ohne diese Reserve löst sich der eigene Raum genau in dem
- * Moment auf, in dem man ihn herumschickt. Gleicher Wert in allen vier Spielen.
+ * Zwei verschiedene Dinge, die man leicht verwechselt:
+ *
+ * ROOM_IDLE_MS – so lange bleibt ein *Raum* offen, in dem gerade niemand sitzt.
+ *   Das ist der Puffer fürs Link-Teilen: dafür muss man den Tab verlassen, und
+ *   auf dem Handy stirbt dabei der Socket. Der Raum steht weiter, wer
+ *   zurückkommt, tritt einfach wieder ein. In der Raumliste taucht er nicht
+ *   auf, solange niemand drin sitzt – erreichbar ist er nur über Code und Link.
+ *
+ * SEAT_GRACE_MS – so lange bleibt ein *Platz* reserviert. Das braucht es nur
+ *   während einer laufenden Partie, weil dort Punkte am Platz hängen. In der
+ *   Lobby hängt daran nichts, also wird der Platz sofort frei – ein Sitz, auf
+ *   dem sichtbar niemand sitzt, verwirrt nur.
+ *
+ * Gleiche Werte und gleiche Regel in allen vier Spielen.
  */
-const REJOIN_MS = 60_000;
+const ROOM_IDLE_MS = 5 * 60_000;
+const SEAT_GRACE_MS = 60_000;
 
 const PRELUDE_MS = 3400;   // Frage lesen, dann 3-2-1
 const GRACE_MS = 900;      // Puffer für Netzlaufzeit nach Rundenende
@@ -88,10 +99,28 @@ function createRoom(isPublic) {
     roundNo: -1,
     current: null,
     timers: new Set(),
+    idleTimer: null,     // läuft, solange niemand im Raum sitzt
     lastActivity: Date.now(),
   };
   rooms.set(room.code, room);
   return room;
+}
+
+/**
+ * Ein Raum, in dem niemand mehr sitzt, wird nicht sofort abgeräumt – sonst wäre
+ * er genau dann weg, wenn man gerade den Link verschickt. Nicht über later():
+ * die Rundentimer werden bei jedem Übergang geleert, dieser darf das nicht
+ * mitmachen.
+ */
+function scheduleIdleClose(room) {
+  if (room.idleTimer) clearTimeout(room.idleTimer);
+  room.idleTimer = setTimeout(() => {
+    if (room.players.size === 0) destroyRoom(room);
+  }, ROOM_IDLE_MS);
+}
+
+function cancelIdleClose(room) {
+  if (room.idleTimer) { clearTimeout(room.idleTimer); room.idleTimer = null; }
 }
 
 function later(room, ms, fn) {
@@ -114,6 +143,7 @@ function clearTimers(room) {
 
 function destroyRoom(room) {
   clearTimers(room);
+  cancelIdleClose(room);
   for (const p of room.players.values()) {
     if (p.dropTimer) clearTimeout(p.dropTimer);
   }
@@ -514,6 +544,7 @@ function backToLobby(room) {
 
 function attach(ws, room, player) {
   browsing.delete(ws);
+  cancelIdleClose(room);
   if (player.dropTimer) { clearTimeout(player.dropTimer); player.dropTimer = null; }
   ws._room = room;
   ws._player = player;
@@ -709,15 +740,19 @@ function dropPlayer(ws, { immediate = false } = {}) {
   player.ws = null;
   player.ready = false;
 
-  if (immediate) {
+  // In der Lobby wird der Platz sofort frei – dort hängt nichts daran, und ein
+  // Sitz mit niemandem drauf verwirrt die anderen nur. Der Raum bleibt trotzdem
+  // offen, wer zurückkommt, tritt einfach wieder ein.
+  if (immediate || room.phase === "lobby") {
     releaseSeat(room, player.id);
     return;
   }
 
+  // Während einer Partie hängen Punkte am Platz, also bleibt er reserviert.
   if (player.dropTimer) clearTimeout(player.dropTimer);
   // Nicht über later(): die Rundentimer werden bei jedem Übergang geleert,
   // dieser hier darf das nicht mitmachen.
-  player.dropTimer = setTimeout(() => releaseSeat(room, player.id), REJOIN_MS);
+  player.dropTimer = setTimeout(() => releaseSeat(room, player.id), SEAT_GRACE_MS);
 
   ensureHost(room);
   pushState(room);
@@ -732,7 +767,14 @@ function releaseSeat(room, id) {
   room.players.delete(id);
   ensureHost(room);
 
-  if (room.players.size === 0) { destroyRoom(room); return; }
+  if (room.players.size === 0) {
+    // Niemand mehr da: der Raum bleibt eine Weile offen, fängt aber von vorn
+    // an. In der Raumliste steht er nicht – nur Code und Link führen hin.
+    backToLobby(room);
+    scheduleIdleClose(room);
+    pushRoomList();
+    return;
+  }
   pushState(room);
   pushRoomList();
 }
