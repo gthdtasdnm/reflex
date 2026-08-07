@@ -1,4 +1,4 @@
-# Reflex Royale
+# Lucky Reflex
 
 Ein Partyspiel für 2–4 Leute im Browser. Ein Raum, ein Code, alle drücken auf
 dasselbe: **schnell reagieren – aber nur, wenn es stimmt.**

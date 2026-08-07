@@ -31,7 +31,7 @@ let retryIn = 500;
 
 function session() {
   try {
-    return JSON.parse(sessionStorage.getItem("reflex") ?? "null");
+    return JSON.parse(sessionStorage.getItem("luckyreflex") ?? "null");
   } catch {
     return null;
   }
@@ -39,7 +39,7 @@ function session() {
 
 function saveSession(data) {
   try {
-    sessionStorage.setItem("reflex", JSON.stringify(data));
+    sessionStorage.setItem("luckyreflex", JSON.stringify(data));
   } catch { /* Privatmodus – dann eben ohne Wiedereinstieg */ }
 }
 
@@ -213,8 +213,7 @@ function renderRooms(list) {
 }
 
 // Gemeinsam mit den anderen drei Spielen: wer bei einem seinen Namen eintippt,
-// findet ihn beim nächsten schon vor. "reflexName" bleibt als Rückfall, damit
-// niemand seinen alten Namen verliert.
+// findet ihn beim nächsten schon vor.
 const NAME_KEY = "spiele_name";
 
 function joinCode(code) {
@@ -721,8 +720,7 @@ function wireInput() {
 
 function wireUi() {
   const nameInput = $("name");
-  nameInput.value = session()?.name ?? localStorage.getItem(NAME_KEY) ??
-    localStorage.getItem("reflexName") ?? "";
+  nameInput.value = session()?.name ?? localStorage.getItem(NAME_KEY) ?? "";
   const remember = () => localStorage.setItem(NAME_KEY, nameInput.value.trim());
 
   for (const b of document.querySelectorAll("[data-vis]")) {
@@ -812,7 +810,7 @@ function wireUi() {
     $("help").hidden = true;
   });
 
-  // Geteilter Link: .../reflex/#AB3K – der Link ist die ganze Interaktion. Wer
+  // Geteilter Link: .../luckyreflex/#AB3K – der Link ist die ganze Interaktion. Wer
   // ihn öffnet, soll im Raum landen und ihn nicht erst in einer Liste suchen
   // müssen. Ist der Name schon bekannt, passiert das ohne einen Klick.
   const hash = location.hash.replace("#", "").toUpperCase();

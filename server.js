@@ -1,4 +1,4 @@
-// REFLEX ROYALE – Deno-Server: statische Dateien + WebSocket + Spiellogik.
+// LUCKY REFLEX – Deno-Server: statische Dateien + WebSocket + Spiellogik.
 // Keine Abhängigkeiten, kein Build-Schritt. `deno task dev` oder direkt:
 //   deno run --allow-net --allow-read --allow-env --allow-sys server.js
 
@@ -859,4 +859,4 @@ setInterval(() => {
   }
 }, 60_000);
 
-console.log(`REFLEX ROYALE läuft auf http://${HOST}:${PORT}/`);
+console.log(`LUCKY REFLEX läuft auf http://${HOST}:${PORT}/`);
