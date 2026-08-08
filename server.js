@@ -3,6 +3,14 @@
 //   deno run --allow-net --allow-read --allow-env --allow-sys server.js
 
 import { buildRoundPlan, itemIndexAt, makeRound } from "./rounds.js";
+import {
+  absender,
+  darfRaumOeffnen,
+  darfVerbinden,
+  raumVermerkt,
+  verbindungAuf,
+  verbindungZu,
+} from "./bremse.js";
 
 const PORT = Number(Deno.env.get("PORT") ?? 8000);
 const HOST = Deno.env.get("HOST") ?? "0.0.0.0";
@@ -600,6 +608,10 @@ function handle(ws, msg) {
 
   if (msg.t === "create") {
     if (room) return;
+    if (!darfRaumOeffnen(ws._ip)) {
+      return raw(ws, { t: "error", msg: "Zu viele Räume in kurzer Zeit. Warte kurz." });
+    }
+    raumVermerkt(ws._ip);
     const r = createRoom(msg.isPublic);
     const p = makePlayer(msg.name, true);
     r.hostId = p.id;
@@ -819,14 +831,30 @@ async function serveStatic(pathname) {
   }
 }
 
-Deno.serve({ port: PORT, hostname: HOST }, (req) => {
+Deno.serve({ port: PORT, hostname: HOST }, (req, info) => {
   const url = new URL(req.url);
 
   if (url.pathname === "/ws" || url.pathname.endsWith("/ws")) {
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return new Response("WebSocket erwartet", { status: 400 });
     }
+    const ip = absender(req, info);
+    if (!darfVerbinden(ip)) {
+      // 429 statt stiller Ablehnung: der Client soll den Unterschied zwischen
+      // "Server kaputt" und "du warst zu schnell" sehen können.
+      return new Response("Zu viele Verbindungen", { status: 429 });
+    }
     const { socket, response } = Deno.upgradeWebSocket(req);
+    socket._ip = ip;
+    // Erst zählen, wenn die Verbindung wirklich steht, und genau einmal
+    // wieder freigeben – sonst sperrt sich die IP mit der Zeit selbst aus.
+    let gezaehlt = false;
+    const abmelden = () => {
+      if (!gezaehlt) return;
+      gezaehlt = false;
+      verbindungZu(ip);
+    };
+    socket.onopen = () => { gezaehlt = true; verbindungAuf(ip); };
     socket.onmessage = (ev) => {
       let msg;
       try {
@@ -842,8 +870,8 @@ Deno.serve({ port: PORT, hostname: HOST }, (req) => {
         }
       }
     };
-    socket.onclose = () => dropPlayer(socket);
-    socket.onerror = () => dropPlayer(socket);
+    socket.onclose = () => { abmelden(); dropPlayer(socket); };
+    socket.onerror = () => { abmelden(); dropPlayer(socket); };
     return response;
   }
 
