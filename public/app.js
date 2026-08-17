@@ -29,17 +29,67 @@ const state = {
 let sock = null;
 let retryIn = 500;
 
+// Die eigene Kennung. Gleiche Regel wie in `gemeinsam/schale.js`, hier von
+// Hand – dieser Client hat die Schale nicht.
+//
+// Bis zum 17.08.2026 lag sie im `sessionStorage` und starb mit dem Tab. Auf
+// dem Handy schließt Safari Tabs von sich aus; wer zurückkam, war für den
+// Server ein neuer Spieler, während sein alter Platz mit dem Hostzeichen
+// stehenblieb – und niemand mehr starten konnte. Das war Bugreport 4.
+//
+// Jetzt `localStorage` plus Herzschlag: der Tab, dem die Kennung gehört,
+// frischt sie alle vier Sekunden auf und schreibt seine Tabkennung dazu.
+//
+//   gleiche Tabkennung        → das sind wir selbst (Neuladen)
+//   fremd, Herzschlag frisch  → ein anderer Tab spielt gerade, Finger weg
+//   fremd, Herzschlag alt     → niemand da, Kennung übernehmen
+//
+// Ohne den mittleren Fall zögen sich zwei Tabs abwechselnd den Platz weg.
+// Nach zwei Stunden verfällt der Eintrag: dann gibt es den Raum längst nicht
+// mehr, und niemand will morgen früh in die Runde von gestern geworfen werden.
+const SITZ_KEY = "luckyreflex";
+const HERZ_MS = 4000;
+const HERZ_TOT = 12_000;
+const SITZ_VERFALL = 2 * 60 * 60 * 1000;
+const TAB = (() => {
+  try {
+    const t = sessionStorage.getItem("spiele_tab") ??
+      (crypto.randomUUID?.() ?? String(Date.now()) + String(Math.random()).slice(2));
+    sessionStorage.setItem("spiele_tab", t);
+    return t;
+  } catch {
+    return "tab";
+  }
+})();
+let herzUhr = null;
+
 function session() {
   try {
-    return JSON.parse(sessionStorage.getItem("luckyreflex") ?? "null");
+    const s = JSON.parse(localStorage.getItem(SITZ_KEY) ?? "null");
+    if (!s || !s.code || !s.token) return null;
+    const alt = Date.now() - (s.herz ?? 0);
+    if (alt > SITZ_VERFALL) { localStorage.removeItem(SITZ_KEY); return null; }
+    if (s.tab !== TAB && alt < HERZ_TOT) return null;
+    return s;
   } catch {
     return null;
   }
 }
 
+/** Token für genau diesen Raum – sonst nichts, damit kein fremder mitfährt. */
+const tokenFuer = (code) => (session()?.code === code ? session().token : undefined);
+
 function saveSession(data) {
   try {
-    sessionStorage.setItem("luckyreflex", JSON.stringify(data));
+    clearInterval(herzUhr);
+    herzUhr = null;
+    if (!data) { localStorage.removeItem(SITZ_KEY); return; }
+    const schreibe = () => localStorage.setItem(
+      SITZ_KEY,
+      JSON.stringify({ ...data, tab: TAB, herz: Date.now() }),
+    );
+    schreibe();
+    herzUhr = setInterval(schreibe, HERZ_MS);
   } catch { /* Privatmodus – dann eben ohne Wiedereinstieg */ }
 }
 
@@ -219,7 +269,7 @@ const NAME_KEY = "spiele_name";
 function joinCode(code) {
   unlock();
   localStorage.setItem(NAME_KEY, $("name").value.trim());
-  state.pendingIntent = { t: "join", code, name: $("name").value.trim() };
+  state.pendingIntent = { t: "join", code, token: tokenFuer(code), name: $("name").value.trim() };
   if (sock?.readyState === WebSocket.OPEN) {
     send(state.pendingIntent);
     state.pendingIntent = null;
@@ -780,13 +830,18 @@ function wireUi() {
 
   $("againBtn").addEventListener("click", () => send({ t: "again" }));
 
-  $("leaveBtn").addEventListener("click", () => {
+  function verlassen() {
     send({ t: "leave" });
     saveSession(null);
     state.room = null;
     location.hash = "";
     show("home");
-  });
+  }
+  $("leaveBtn").addEventListener("click", verlassen);
+  // Derselbe Weg hinaus von überall: Lobby, Spielbildschirm, Endstand.
+  for (const b of document.querySelectorAll("[data-raus]")) {
+    b.addEventListener("click", verlassen);
+  }
 
   $("copyBtn").addEventListener("click", async () => {
     const link = location.href.split("#")[0] + "#" + state.code;
