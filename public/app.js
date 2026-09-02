@@ -3,6 +3,13 @@
 import { createRenderer } from "./render.js";
 import { isEnabled, setEnabled, sfx, unlock } from "./audio.js";
 
+import { starteSprache, t, uebersetze } from "./sprache.js";
+import { WOERTER } from "./texte.js";
+
+// Vor allem, was zeichnet: der Warteraum soll gleich in der richtigen
+// Sprache dastehen. Deutsch steht im HTML und in den Aufrufen hier.
+starteSprache(WOERTER);
+
 const $ = (id) => document.getElementById(id);
 
 // Sitzplatz-Tierchen. Gleiche Liste und gleiche Ableitung in allen vier
@@ -130,7 +137,7 @@ function connect() {
   };
 
   sock.onclose = () => {
-    setStatus("Verbindung weg – neuer Versuch …");
+    setStatus(t("c.weg", {}, "Verbindung weg – neuer Versuch …"));
     setTimeout(connect, retryIn);
     retryIn = Math.min(retryIn * 1.8, 8000);
   };
@@ -246,8 +253,9 @@ function renderRooms(list) {
   const box = $("roomList");
   $("roomsCount").textContent = list.length ? `(${list.length})` : "";
   if (!list.length) {
-    box.innerHTML = `<p class="rooms-empty">Gerade ist kein Raum offen.
-      Eröffne einen – er erscheint dann bei den anderen in der Liste.</p>`;
+    box.innerHTML = `<p class="rooms-empty">${
+      t("c.keinRaum", {}, "Gerade ist kein Raum offen. Eröffne einen – er erscheint dann bei den anderen in der Liste.")
+    }</p>`;
     return;
   }
   box.innerHTML = list.map((r) => `
@@ -289,8 +297,8 @@ function renderRoom() {
     $("roomCode").textContent = r.code;
     $("lobbyCount").textContent = `${r.players.filter((p) => p.connected).length}/4`;
     $("roomVis").textContent = r.isPublic
-      ? "Öffentlich – steht in der Liste"
-      : "Privat – nur mit Code";
+      ? t("c.oeffentlich", {}, "Öffentlich – steht in der Liste")
+      : t("c.privat", {}, "Privat – nur mit Code");
 
     const list = $("playerList");
     list.textContent = "";
@@ -301,15 +309,22 @@ function renderRoom() {
         (p?.ready ? " ready" : "") + (p && !p.connected ? " off" : "");
       if (!p) {
         card.innerHTML =
-          `<div class="av">🪑</div><div class="nm">frei</div><div class="st">wartet</div>`;
+          `<div class="av">🪑</div><div class="nm">${t("c.frei", {}, "frei")}</div>` +
+        `<div class="st">${t("c.wartet", {}, "wartet")}</div>`;
       } else {
         card.innerHTML = `
           <div class="av">${avatarFor(p.id)}</div>
-          <div class="nm">${escapeHtml(p.name)}${p.id === state.you ? " (du)" : ""}</div>
+          <div class="nm">${escapeHtml(p.name)}${p.id === state.you ? t("c.du", {}, " (du)") : ""}</div>
           <div class="st">${
-          !p.connected ? "weg" : p.host ? "startet" : p.ready ? "✓ bereit" : "wartet"
+          !p.connected
+            ? t("lr.weg", {}, "weg")
+            : p.host
+            ? t("lr.startet", {}, "startet")
+            : p.ready
+            ? t("lr.bereit", {}, "✓ bereit")
+            : t("c.wartet", {}, "wartet")
         }</div>
-          ${p.host ? '<div class="host">HOST</div>' : ""}`;
+          ${p.host ? `<div class="host">${t("c.host", {}, "HOST")}</div>` : ""}`;
       }
       list.append(card);
     }
@@ -332,12 +347,14 @@ function renderRoom() {
     const allReady = others.every((p) => p.ready);
     $("startBtn").disabled = !allReady;
     $("startHint").textContent = here.length < 2
-      ? "Allein spielbar zum Ausprobieren – zu zweit macht es mehr her."
+      ? t("lr.allein", {}, "Allein spielbar zum Ausprobieren – zu zweit macht es mehr her.")
       : allReady
-      ? "Alle bereit!"
-      : "Warten auf die anderen …";
+      ? t("c.alleBereit", {}, "Alle bereit!")
+      : t("lr.warten", {}, "Warten auf die anderen …");
 
-    $("readyBtn").textContent = me?.ready ? "Doch nicht bereit" : "Bereit!";
+    $("readyBtn").textContent = me?.ready
+      ? t("lr.dochNicht", {}, "Doch nicht bereit")
+      : t("schale.bereitKnopf", {}, "Bereit!");
     $("readyBtn").classList.toggle("on", !!me?.ready);
   } else if (r.phase === "playing") {
     show("game");
@@ -528,7 +545,7 @@ function press() {
   // Vorlauf gilt bewusst nicht als Fehlstart: wer nach der letzten Runde noch
   // einmal aufs Display tippt, soll die nächste nicht schon verloren haben.
   if (cur.phase !== "live") {
-    if (cur.phase === "prelude") nudge("Noch nicht …");
+    if (cur.phase === "prelude") nudge(t("lr.nochNicht", {}, "Noch nicht …"));
     return;
   }
 
@@ -569,6 +586,8 @@ function localVerdict(i, t) {
 }
 
 const FEEDBACK = {
+  // Der Text wird beim Anzeigen uebersetzt (lr.urteil.*) - hier steht der
+  // deutsche Wortlaut, wie ueberall.
   hit: { text: "TREFFER", sound: "hit" },
   perfect: { text: "PERFEKT!", sound: "perfect" },
   early: { text: "ZU FRÜH", sound: "wrong" },
@@ -590,7 +609,7 @@ function showFeedback(kind, i, elapsed) {
   const ms = showMs
     ? `<small>${Math.max(0, Math.round(elapsed - item.t - item.at))} ms</small>`
     : "";
-  node.innerHTML = `${f.text}${ms}`;
+  node.innerHTML = `${t("lr.urteil." + kind, {}, f.text)}${ms}`;
   sfx[f.sound]?.();
   if (kind !== "hit" && kind !== "perfect") {
     $("game").classList.add("shake");
@@ -678,10 +697,14 @@ function showResult(msg) {
   const others = winners.filter((w) => w.id !== state.you);
 
   let winLine = "";
-  if (iWon && winners.length === 1) winLine = "RUNDE GEWONNEN";
-  else if (iWon) winLine = "Runde geteilt";
+  if (iWon && winners.length === 1) winLine = t("lr.gewonnen", {}, "RUNDE GEWONNEN");
+  else if (iWon) winLine = t("lr.geteilt", {}, "Runde geteilt");
   else if (others.length) {
-    winLine = `Runde an ${others.map((w) => escapeHtml(w.name)).join(" & ")}`;
+    winLine = t(
+      "lr.rundeAn",
+      { namen: others.map((w) => escapeHtml(w.name)).join(" & ") },
+      `Runde an ${others.map((w) => escapeHtml(w.name)).join(" & ")}`,
+    );
   }
 
   const badges = (me?.notes ?? [])
@@ -704,7 +727,9 @@ function showResult(msg) {
     me ? (me.delta > 0 ? "+" + me.delta.toLocaleString("de-DE") : "0") : ""
   }</div>
     <div class="fl-badges">${badges}${
-    me && me.mult > 1 ? `<span class="fl-badge mult">Serie ×${me.mult}</span>` : ""
+    me && me.mult > 1
+      ? `<span class="fl-badge mult">${t("lr.serie", { n: me.mult }, `Serie ×${me.mult}`)}</span>`
+      : ""
   }</div>
     <div class="fl-win ${iWon ? "mine" : ""}">${winLine}</div>
     <div class="fl-tallies">${bilanz}</div>
@@ -847,7 +872,7 @@ function wireUi() {
     const link = location.href.split("#")[0] + "#" + state.code;
     try {
       await navigator.clipboard.writeText(link);
-      toast("Link kopiert");
+      toast(t("schale.kopiert", {}, "Link kopiert"));
     } catch {
       toast(link);
     }

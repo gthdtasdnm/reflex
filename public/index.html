@@ -17,33 +17,36 @@
 <section id="screen-home" class="screen active">
   <div class="home">
     <h1 class="logo">LUCKY<span>REFLEX</span></h1>
-    <p class="tag">Schnell drücken. Aber nur, wenn es stimmt.</p>
+    <p data-t="luckyreflex.schnelldrcke1" class="tag">Schnell drücken. Aber nur, wenn es stimmt.</p>
 
-    <label class="field-label" for="name">Dein Name</label>
-    <input id="name" maxlength="12" placeholder="z.&nbsp;B. Mo" autocomplete="nickname">
+    <label class="field-label" for="name" data-t="schale.deinName">Dein Name</label>
+    <input id="name" maxlength="12" placeholder="z.&nbsp;B. Mo" autocomplete="nickname"
+           data-t-attr="placeholder:schale.namePlatz">
 
     <div class="setting">
-      <span class="setting-label">Sichtbar</span>
+      <span class="setting-label" data-t="schale.sichtbar">Sichtbar</span>
       <div class="segmented">
-        <button class="seg sel" data-vis="public">Öffentlich</button>
-        <button class="seg" data-vis="private">Privat</button>
+        <button class="seg sel" data-vis="public" data-t="schale.oeffentlichKnopf">Öffentlich</button>
+        <button class="seg" data-vis="private" data-t="schale.privatKnopf">Privat</button>
       </div>
     </div>
-    <button id="createBtn" class="btn primary big">Raum eröffnen</button>
+    <button id="createBtn" class="btn primary big" data-t="schale.raumAuf">Raum eröffnen</button>
 
-    <div class="or"><span>oder beitreten</span></div>
+    <div class="or"><span data-t="schale.oder">oder beitreten</span></div>
 
-    <div class="rooms-head">Offene Räume <span id="roomsCount"></span></div>
+    <div class="rooms-head"><span data-t="schale.offeneRaeume">Offene Räume</span> <span id="roomsCount"></span></div>
     <div id="roomList" class="roomlist"></div>
 
     <div class="joinrow">
       <input id="codeInput" maxlength="5" placeholder="CODE" autocapitalize="characters"
-             autocomplete="off" spellcheck="false">
-      <button id="joinBtn" class="btn">Mit Code</button>
+             autocomplete="off" spellcheck="false" data-t-attr="placeholder:schale.codePlatz">
+      <button id="joinBtn" class="btn" data-t="schale.mitCode">Mit Code</button>
     </div>
 
-    <button id="helpBtn" class="btn ghost small">Wie geht das?</button>
-    <p class="zurueckzeile"><a class="zurueck" href="/spiele/">← Alle Spiele</a></p>
+    <button id="helpBtn" class="btn ghost small" data-t="schale.wieGeht">Wie geht das?</button>
+    <p class="zurueckzeile"><a class="zurueck" href="/spiele/" data-t="schale.alleSpiele">← Alle Spiele</a></p>
+    <!-- Fuellt sprache.js; ohne JavaScript bleibt er leer. -->
+    <div data-sprachwahl aria-label="Sprache"></div>
   </div>
 </section>
 
@@ -51,20 +54,20 @@
 <section id="screen-lobby" class="screen">
   <div class="lobby">
     <div class="codebox">
-      <span class="codebox-label">Raumcode</span>
+      <span class="codebox-label" data-t="schale.raumcode">Raumcode</span>
       <strong id="roomCode">····</strong>
       <span id="roomVis" class="codebox-vis"></span>
-      <button id="copyBtn" class="btn ghost small">Link kopieren</button>
+      <button id="copyBtn" class="btn ghost small" data-t="schale.linkKopieren">Link kopieren</button>
     </div>
 
     <div class="lobby-head">
-      <h2>Spieler <span id="lobbyCount">1/4</span></h2>
+      <h2><span data-t="schale.spielerKopf">Spieler</span> <span id="lobbyCount">1/4</span></h2>
     </div>
     <div id="playerList" class="seats"></div>
 
     <div id="hostControls" hidden>
       <div class="setting">
-        <span class="setting-label">Runden</span>
+        <span data-t="luckyreflex.runden2" class="setting-label">Runden</span>
         <div class="segmented">
           <button class="seg" data-rounds="6">6</button>
           <button class="seg" data-rounds="10">10</button>
@@ -73,22 +76,22 @@
         </div>
       </div>
       <div class="setting">
-        <span class="setting-label">Sichtbar</span>
+        <span class="setting-label" data-t="schale.sichtbar">Sichtbar</span>
         <div class="segmented">
-          <button class="seg" data-lobbyvis="public">Öffentlich</button>
-          <button class="seg" data-lobbyvis="private">Privat</button>
+          <button class="seg" data-lobbyvis="public" data-t="schale.oeffentlichKnopf">Öffentlich</button>
+          <button class="seg" data-lobbyvis="private" data-t="schale.privatKnopf">Privat</button>
         </div>
       </div>
-      <button id="startBtn" class="btn primary big">Spiel starten</button>
+      <button data-t="luckyreflex.spielstarten3" id="startBtn" class="btn primary big">Spiel starten</button>
       <p id="startHint" class="hintline"></p>
     </div>
 
     <div id="guestControls" hidden>
-      <button id="readyBtn" class="btn big">Bereit!</button>
-      <p class="hintline">Der Host startet, sobald alle bereit sind.</p>
+      <button id="readyBtn" class="btn big" data-t="schale.bereitKnopf">Bereit!</button>
+      <p class="hintline" data-t="schale.hostStartet">Der Host startet, sobald alle bereit sind.</p>
     </div>
 
-    <button id="leaveBtn" class="btn ghost small">Raum verlassen</button>
+    <button id="leaveBtn" class="btn ghost small" data-t="schale.verlassen">Raum verlassen</button>
   </div>
 </section>
 
@@ -99,7 +102,7 @@
       <div class="tb-round"><span id="roundNo">1</span><small>/<span id="roundTotal">10</span></small></div>
       <div id="combo" class="tb-combo"></div>
       <button id="soundBtn" class="tb-sound">🔊</button>
-      <button class="btn ghost sm" data-raus>Verlassen</button>
+      <button class="btn ghost sm" data-raus data-t="schale.raus">Verlassen</button>
     </header>
 
     <div id="timerbar" class="timerbar"><div id="timerFill"></div></div>
@@ -118,41 +121,41 @@
 <!-- ------------------------------------------------------------------ -->
 <section id="screen-final" class="screen">
   <div class="final">
-    <h2 class="final-title">Endstand</h2>
+    <h2 class="final-title" data-t="schale.endstand">Endstand</h2>
     <ol id="podium" class="podium"></ol>
-    <button id="againBtn" class="btn big">Nochmal!</button>
-    <p id="againHint" class="hintline">Der Host kann eine neue Runde starten.</p>
-    <button class="btn ghost small" data-raus>Raum verlassen</button>
+    <button id="againBtn" class="btn big" data-t="schale.nochmal">Nochmal!</button>
+    <p data-t="luckyreflex.derhostkanne4" id="againHint" class="hintline">Der Host kann eine neue Runde starten.</p>
+    <button class="btn ghost small" data-raus data-t="schale.verlassen">Raum verlassen</button>
   </div>
 </section>
 
 <!-- ------------------------------------------------------------------ -->
 <div id="help" hidden>
   <div class="help-inner">
-    <h2>So läuft das</h2>
-    <p><strong>Drücken heißt:</strong> irgendwo auf die Spielfläche tippen – am
+    <h2 data-t="schale.soLaeuft">So läuft das</h2>
+    <p data-t-html="luckyreflex.drckenheitir5"><strong>Drücken heißt:</strong> irgendwo auf die Spielfläche tippen – am
        Rechner Leertaste.</p>
     <ul>
-      <li><b>Fünf Aufgaben pro Runde,</b> alle aus derselben Kategorie, ohne
+      <li data-t-html="luckyreflex.fnfaufgabenp6"><b>Fünf Aufgaben pro Runde,</b> alle aus derselben Kategorie, ohne
           Pause dazwischen. Zwei oder drei davon passen – bei den anderen ist
           Stillhalten die richtige Antwort.</li>
-      <li><b>Jede Aufgabe zählt einzeln.</b> Wer bei einer passenden Aufgabe
+      <li data-t-html="luckyreflex.jedeaufgabez7"><b>Jede Aufgabe zählt einzeln.</b> Wer bei einer passenden Aufgabe
           zuerst drückt, holt sie sich; für die anderen ist sie ab dann
           gesperrt und sie sehen, wer schneller war. Bei der nächsten sind
           alle wieder dabei.</li>
-      <li><b>Ein Fehlgriff kostet nur diese eine Aufgabe</b> – nie die ganze
+      <li data-t-html="luckyreflex.einfehlgriff8"><b>Ein Fehlgriff kostet nur diese eine Aufgabe</b> – nie die ganze
           Runde. Weil die meisten Aufgaben nicht passen, lohnt sich blindes
           Drauflosdrücken trotzdem nicht.</li>
-      <li><b>Der Balken oben</b> ist die Frist für die Aufgabe, die gerade zu
+      <li data-t-html="luckyreflex.derbalkenobe9"><b>Der Balken oben</b> ist die Frist für die Aufgabe, die gerade zu
           sehen ist. Bei den Warteaufgaben passiert das Ereignis irgendwann im
           Fenster – oder gar nicht.</li>
-      <li><b>Rundensieger</b> ist, wer die meisten der fünf Aufgaben geholt
+      <li data-t-html="luckyreflex.rundensieger10"><b>Rundensieger</b> ist, wer die meisten der fünf Aufgaben geholt
           hat. Es gewinnt immer jemand.</li>
-      <li><b>Serie:</b> Jede gewonnene Runde steigert den Multiplikator bis
+      <li data-t-html="luckyreflex.seriejedegew11"><b>Serie:</b> Jede gewonnene Runde steigert den Multiplikator bis
           ×3. Eine verlorene setzt ihn auf null.</li>
-      <li><b>Blitz:</b> Unter 250 Millisekunden gibt es Extrapunkte.</li>
+      <li data-t-html="luckyreflex.blitzuntermi12"><b>Blitz:</b> Unter 250 Millisekunden gibt es Extrapunkte.</li>
     </ul>
-    <button id="helpClose" class="btn">Alles klar</button>
+    <button id="helpClose" class="btn" data-t="schale.allesKlar">Alles klar</button>
   </div>
 </div>
 
