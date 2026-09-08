@@ -862,11 +862,41 @@ function wireUi() {
     location.hash = "";
     show("home");
   }
-  $("leaveBtn").addEventListener("click", verlassen);
-  // Derselbe Weg hinaus von überall: Lobby, Spielbildschirm, Endstand.
-  for (const b of document.querySelectorAll("[data-raus]")) {
-    b.addEventListener("click", verlassen);
+  // Zwei Stufen, aber nur wo es weh tut: im Warteraum kostet ein Fehlgriff
+  // nichts, in der laufenden Runde die Punkte. Seit dem 08.09.2026 ist dieser
+  // Knopf der einzige Weg, den Platz wirklich aufzugeben – alles andere
+  // (weggewischt, gesperrt, Funkloch) hält der Server minutenlang frei. Der
+  // Knopf schreibt sich dafür kurz um, statt einen Dialog aufzumachen:
+  // `confirm()` blockiert auf dem Handy die ganze Seite, und die Verbindung
+  // läuft derweil weiter.
+  //
+  // Den Ping braucht dieses Spiel nicht extra: `syncClock` schickt alle vier
+  // Sekunden einen, und der stempelt `lastSeen` genauso.
+  const BEDENK_MS = 4000;
+
+  function knopfRaus(b) {
+    if (!b) return;
+    let scharf = null;
+    const zurueck = () => {
+      clearTimeout(scharf);
+      scharf = null;
+      if (b.dataset.wortlaut != null) b.textContent = b.dataset.wortlaut;
+      b.classList.remove("fragt");
+    };
+    b.addEventListener("click", () => {
+      const raum = state.room;
+      if (!raum || raum.phase === "lobby") return verlassen();
+      if (scharf) { zurueck(); return verlassen(); }
+      b.dataset.wortlaut = b.textContent;
+      b.textContent = t("schale.wirklichRaus", {}, "Wirklich raus?");
+      b.classList.add("fragt");
+      scharf = setTimeout(zurueck, BEDENK_MS);
+    });
   }
+
+  knopfRaus($("leaveBtn"));
+  // Derselbe Weg hinaus von überall: Lobby, Spielbildschirm, Endstand.
+  for (const b of document.querySelectorAll("[data-raus]")) knopfRaus(b);
 
   $("copyBtn").addEventListener("click", async () => {
     const link = location.href.split("#")[0] + "#" + state.code;
